@@ -4,6 +4,7 @@ import os
 import imageio
 import numpy as np
 from PIL import Image
+from sklearn.model_selection import train_test_split
 
 cream_bg = (195, 201, 198)
 
@@ -82,36 +83,70 @@ def augment():
 
 
 class Data:
-
+    
+    # Maps each class of white blood cell to an integer label
     class_map = {0 : "EOSINOPHIL", 1 : "LYMPHOCYTE", 2 : "MONOCYTE", 3 : "NEUTROPHIL", 4 : "BASOPHIL",
                  "EOSINOPHIL" : 0, "LYMPHOCYTE" : 1, "MONOCYTE" : 2, "NEUTROPHIL" : 3, "BASOPHIL" : 4 }
-
-
-    # The image data. Each entry is a matrix of shape (480, 640, 3) or (480, 640, 1) for grayscale
+    
+    # The image data. Each entry is the filename for a 480x640 image.
     # Converted to a numpy array after the constructor is called
     X = []
 
     # The labels (vector of length = len(X))
     # Converted to a numpy array after the constructor is called
     Y = []
+    
+    #### Counting distribution of each class
+    #distribution = {"EOSINOPHIL" : 0, "LYMPHOCYTE" : 0, "MONOCYTE" : 0, "NEUTROPHIL" : 0, "BASOPHIL" : 0}
 
-    def __init__(self, flatten=False, grayscale=False):
+    def __init__(self):
         """
         Read in the augmented data which is ready for models
         """
+        
         augDir = r"augmented"
         csv_labels = pd.read_csv("auglabels.csv")["label"].tolist()
         i = 0
-        for im in os.listdir(augDir):
-            image = imageio.imread(augDir + "/" + im)
-
-            self.X.append(image)
-            # Get the integer mapping of this label
+        
+        # Loop over image files, ensuring order of filenames matches labels CSV
+        # https://stackoverflow.com/questions/33159106/sort-filenames-in-directory-in-ascending-order
+        for im in sorted(os.listdir(augDir), key=lambda f: int(''.join(filter(str.isdigit, f)))):
+            # Store image filenames
+            self.X.append(im)
+            
+            # Get the integer mapping of this image label
             label_as_int = self.class_map[csv_labels[i]]
             self.Y.append(label_as_int)
+            
+            #### For counting distribution of blood cell types
+            #self.distribution[csv_labels[i]] += 1
             i += 1
+
         self.X = np.array(self.X)
         self.Y = np.array(self.Y)
+        
         return
+    
+    
+    def splitData(self, random_state=None):
+        """
+            Splits own data (X and y) into training and test sets by
+            an 80/20 ratio.
+            
+            Parameters:
+                random_state (optional): a random integer seed for splitting
+                
+                
+            Returns:
+                X_train: a Numpy array of filenames for image data
+                X_test: a Numpy array of filenames for image data
+                y_train: a Numpy array of labels for the data in X_train
+                y_test: a Numpy array of labels for the data in X_test
+        """
 
-
+        X_train, X_test, y_train, y_test = train_test_split(
+        self.X, self.Y, stratify=self.Y, test_size=0.2, random_state=random_state)
+        
+        return (X_train, X_test, y_train, y_test)
+    
+    
