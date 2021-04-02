@@ -135,20 +135,25 @@ def trainLoop(model, X_train, y_train, samples_per_batch, useGrayscale=False, pc
     # Split the training data and labels into batches
     batches = getBatches(X_train, samples_per_batch)
     batchLabels = getBatches(y_train, samples_per_batch)
+    number_of_batches = len(list(getBatches(y_train, samples_per_batch)))
     
     i = 0
-    #### TODO: gui progress
-    #sg.OneLineProgressMeter("Train progress for current model", i, len(list(batchLabels)))
-    
     # Train by iterating over batches
     for XBatch, yBatch in zip(batches, batchLabels):
-        XBatch = loadBatchImages(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
-
-        # Partial fit on the current batch for training
-        model.partial_fit(XBatch, yBatch, classes=[0,1,2,3,4])
-        i += 1
-        print("Batch {} complete for training current model".format(i))
+        proceed = sg.OneLineProgressMeter("Train progress", i + 1, number_of_batches, "key", "Iterations indicate batches for training current model")
+        
+        if not proceed:
+            print("Training was cancelled")
+            model = None
+            break
+        else:
+            XBatch = loadBatchImages(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
     
+            # Partial fit on the current batch for training
+            model.partial_fit(XBatch, yBatch, classes=[0,1,2,3,4])
+            i += 1
+            print("Batch {} complete for training current model".format(i))
+        
     return model
 
 def testLoop(model, X_test, y_test, samples_per_batch, useGrayscale=False, pca=False, flatten=False):
@@ -184,23 +189,30 @@ def testLoop(model, X_test, y_test, samples_per_batch, useGrayscale=False, pca=F
     # Split the test data (X_test) and labels (y_test) into batches
     batches = getBatches(X_test, samples_per_batch)
     batchLabels = getBatches(y_test, samples_per_batch)
+    number_of_batches = len(list(getBatches(y_test, samples_per_batch)))
     
     i = 0
-    #sg.OneLineProgressMeter("Test progress for current model", i, len(list(batchLabels)))
-    
+
     # Test over all the batches
     for XBatch, yBatch in zip(batches, batchLabels):
-        XBatch = loadBatchImages(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
-
-        # Score the model on this batch of test data
-        accuracy = model.score(XBatch, yBatch)
-        correct += accuracy*samples_per_batch
+        proceed = sg.OneLineProgressMeter("Test progress", i + 1, number_of_batches, "key", "Iterations indicate batches for testing current model")
         
-        ### TODO: F1-score
-        print("Accuracy of batch: {}".format(accuracy))
-        print("Number of correct predictions so far: {}".format(correct))
-        i += 1
-        print("Batch {} complete for testing current model".format(i))
+        # Cancel if progress bar was cancelled
+        if not proceed:
+            print("Testing was cancelled")
+            return None
+        else:    
+            XBatch = loadBatchImages(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
+            
+            # Score the model on this batch of test data
+            accuracy = model.score(XBatch, yBatch)
+            correct += accuracy*samples_per_batch
+            
+            ### TODO: F1-score
+            print("Accuracy of batch: {}".format(accuracy))
+            print("Number of correct predictions so far: {}".format(correct))
+            i += 1
+            print("Batch {} complete for testing current model".format(i))
 
     print("Overall accuracy: {}".format(correct/totalTest))
 
@@ -228,6 +240,10 @@ def trainBayes(X_train, X_test, y_train, y_test, random_state):
     
     # Train model in batches, applying grayscale, PCA and flattening the image data
     bayes = trainLoop(bayes, X_train, y_train, samples_per_batch, useGrayscale=True, pca=True, flatten=True)
+    
+    #### Cancel training quickly, TODO: make cancellation more proper
+    if bayes is None:
+        return
     
     print("Testing Bayes model...")
     testLoop(bayes, X_test, y_test, samples_per_batch, useGrayscale=True, pca=True, flatten=True)
