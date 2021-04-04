@@ -149,4 +149,11 @@ class Data:
         
         return (X_train, X_test, y_train, y_test)
     
-    
+    def isomap_reduce(self, batch, lower_dimensions, consider_n_neighbours=10):
+        """
+        Apply the isomap dimension reduction on the batch
+        :param batch: a subset of the class data self.X. Each entry is an image of 3 RGB channels
+        :return: the manifold dimension reduction of the reduced batch
+        """
+        isomap = Isomap(n_components=lower_dimensions, n_neighbors=consider_n_neighbours)
+        return isomap.fit_transform(batch)
