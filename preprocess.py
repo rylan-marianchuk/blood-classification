@@ -1,9 +1,11 @@
 import pandas as pd
 import imgaug as ia
 import os
-import imageio
+#import imageio
 import numpy as np
+from sklearn.manifold import Isomap
 from PIL import Image
+from PIL.ImageOps import grayscale
 from sklearn.model_selection import train_test_split
 
 cream_bg = (195, 201, 198)
@@ -23,7 +25,6 @@ def mask(img):
               img[i][j][2] = cream_bg[2]
 
     #ia.imshow(img)
-
 
 def augment():
     """
@@ -80,7 +81,69 @@ def augment():
     # Write labels to csv
     pd.DataFrame({'label': labels}).to_csv("auglabels.csv")
 
+def load_batch_images(batch, useGrayscale=False, reduce=False, flatten=False):
+    """
+        Load a batch of image data, with optional processing.
+        
+        batch - array of image filenames located in the 'augmented' directory
+        useGrayscale - if True, converts the image to grayscale
+        reduce - if True, processes the image with isomap reduction
+        flatten - if True, flattens the image matrices
+        
+        Returns a Numpy array of image matrices of shape (480, 640, 3) or (480, 640, 1) for grayscale,
+        with optional flattening.
+        
+    """
+    loadedBatch = []
+    print("Loading image batch...")
 
+    # Load images from this batch
+    for im in batch:
+        im = Image.open(r"augmented/" + im)
+            
+        # Additional processing
+        if useGrayscale:
+            im = grayscale(im)
+            
+        # Convert image to Numpy array
+        im = np.asarray(im)
+        
+        # Flatten the image
+        if flatten:
+            im = im.flatten()
+            
+        # Store image and label 
+        loadedBatch.append(im)
+    
+    # Apply isomap dimension reduction
+    if reduce:
+        loadedBatch = Data.isomap_reduce(loadedBatch, 50)
+
+    return loadedBatch
+
+def load_reduced_batches(batches):
+    """
+    Load
+
+    Parameters
+    ----------
+    batches : generator
+        Yields batches of image filenames to load.
+        
+    Returns
+    -------
+    reduced_images : Numpy array
+        array of processed image vectors
+
+    """
+    
+    reduced_images = []
+
+    # Reduce all images in each batch
+    for b in batches:
+        reduced_images.extend(load_batch_images(b, useGrayscale=True, reduce=True, flatten=True))
+            
+    return np.array(reduced_images)
 
 class Data:
     
@@ -149,7 +212,7 @@ class Data:
         
         return (X_train, X_test, y_train, y_test)
     
-    def isomap_reduce(self, batch, lower_dimensions, consider_n_neighbours=10):
+    def isomap_reduce(batch, lower_dimensions, consider_n_neighbours=10):
         """
         Apply the isomap dimension reduction on the batch
         :param batch: a subset of the class data self.X. Each entry is an image of 3 RGB channels

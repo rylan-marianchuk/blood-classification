@@ -5,10 +5,10 @@ REQUIRED PYTHON PACKAGE INSTALLATION:
     PySimpleGUI: pip3 install pysimplegui
     PIL: 
     Numpy: 
-    sklearn: 
+    sklearn: pip3 install sklearn
     imgaug: pip3 install imgaug
     imageio: 
-    pandas: 
+    pandas: pip3 install pandas
 
 Main application interface.
 
@@ -17,97 +17,19 @@ Main application interface.
     
 import PySimpleGUI as sg      # Simple GUI library
 import numpy as np
-import matplotlib as plt
+#import matplotlib.pyplot as plt
 
-from PIL import Image
-from PIL.ImageOps import grayscale
-from sklearn.decomposition import PCA, IncrementalPCA
+#from PIL import Image
+#from sklearn.decomposition import PCA, IncrementalPCA
 from sklearn.model_selection import GridSearchCV
 
 from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import f1_score
+from sklearn.metrics import precision_recall_fscore_support
 
-from preprocess import Data         
-
-def applyPCA(im):
-    """
-        Processes an image with PCA and returns the reconstructed image.
-        
-        TODO: more proper implementation
-        
-    """
-    # https://www.kaggle.com/mirzarahim/introduction-to-pca-image-compression-example
-    
-    pca = PCA()
-    pca.fit(im)
-    
-    # Getting the cumulative variance
-    var_cumu = np.cumsum(pca.explained_variance_ratio_)*100
-            
-    # How many PCs explain 95% of the variance?
-    k = np.argmax(var_cumu>95)
-    #print("Number of components explaining 95% variance: "+ str(k))
-    #print("\n")
-            
-    ipca = IncrementalPCA(n_components=k)
-    image_recon = ipca.inverse_transform(ipca.fit_transform(im))
-    
-    # Plotting the original image
-    #plt.figure.Figure(figsize=[12,8])
-    #plt.pyplot.imshow(im,cmap = plt.cm.gray)
-    
-    # Plotting the reconstructed image
-    #plt.figure.Figure(figsize=[12,8])
-    #plt.pyplot.imshow(image_recon,cmap = plt.cm.gray)
-    
-    return image_recon
-
-def getBatches(lst, samples_per_batch):
-    """Generator yielding successive chunks from lst, of size "samples_per_batch"."""
-    # https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
-        
-    for i in range(0, len(lst), samples_per_batch):
-        yield lst[i:i + samples_per_batch]
-
-def loadBatchImages(batch, useGrayscale=False, pca=False, flatten=False):
-    """
-        Load a batch of image data, with optional processing.
-        Returns a Numpy array of image matrices of shape (480, 640, 3) or (480, 640, 1) for grayscale,
-        with optional flattening.
-        
-        batch - array of image filenames located in the 'augmented' directory
-        useGrayscale - if True, converts the image to grayscale
-        pca - if True, processes the image with PCA
-        flatten - if True, flattens the image matrices
-        
-    """
-    loadedBatch = []
-    print("Loading image batch...")
-
-    # Load images from this batch
-    for im in batch:
-        im = Image.open(augDir + "/" + im)
-            
-        # Additional processing
-        if useGrayscale:
-            im = grayscale(im)
-        if pca:
-            im = applyPCA(im)
-        # Convert image to Numpy array
-        im = np.asarray(im)
-            
-        # Flatten the image
-        if flatten:
-            im = im.flatten()
-            
-        # Store image and label 
-        loadedBatch.append(im)
-
-    return loadedBatch
+from preprocess import Data, load_batch_images, load_reduced_batches       
 
 def trainLoop(model, X_train, y_train, samples_per_batch, useGrayscale=False, pca=False, flatten=False):
     """
-
     Parameters
     ----------
     model : 
@@ -131,30 +53,27 @@ def trainLoop(model, X_train, y_train, samples_per_batch, useGrayscale=False, pc
     the trained model
 
     """
-    
+
     # Split the training data and labels into batches
-    batches = getBatches(X_train, samples_per_batch)
-    batchLabels = getBatches(y_train, samples_per_batch)
-    number_of_batches = len(list(getBatches(y_train, samples_per_batch)))
+    batches, batch_labels, number_of_batches = getBatches(X_train, y_train, samples_per_batch)
     
     i = 0
     # Train by iterating over batches
-    for XBatch, yBatch in zip(batches, batchLabels):
-        proceed = sg.OneLineProgressMeter("Train progress", i + 1, number_of_batches, "key", "Iterations indicate batches for training current model")
+    for XBatch, yBatch in zip(batches, batch_labels):
+        proceed = sg.OneLineProgressMeter("Train progress", i + 1, number_of_batches, \
+                                          "key", "Iterations indicate batches for training current model")
         
         if not proceed:
-            print("Training was cancelled")
-            model = None
+            print("Training ended")
             break
         else:
-            XBatch = loadBatchImages(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
+            XBatch = load_batch_images(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
     
             # Partial fit on the current batch for training
             model.partial_fit(XBatch, yBatch, classes=[0,1,2,3,4])
             i += 1
             print("Batch {} complete for training current model".format(i))
         
-    return model
 
 def testLoop(model, X_test, y_test, samples_per_batch, useGrayscale=False, pca=False, flatten=False):
     """
@@ -182,71 +101,169 @@ def testLoop(model, X_test, y_test, samples_per_batch, useGrayscale=False, pca=F
     The overall accuracy scores of this model (micro-averaged F1-score, general accuracy)
 
     """
-    
+
     correct = 0      # Number of correct predictions
     totalTest = len(y_test)    # Total number of test samples
     
     # Split the test data (X_test) and labels (y_test) into batches
-    batches = getBatches(X_test, samples_per_batch)
-    batchLabels = getBatches(y_test, samples_per_batch)
-    number_of_batches = len(list(getBatches(y_test, samples_per_batch)))
+    batches, batch_labels, number_of_batches = getBatches(X_test, y_test, samples_per_batch)
     
     i = 0
+    predictions = []   # Record predictions over all batches
+    targets = []
 
     # Test over all the batches
-    for XBatch, yBatch in zip(batches, batchLabels):
+    for XBatch, yBatch in zip(batches, batch_labels):
         proceed = sg.OneLineProgressMeter("Test progress", i + 1, number_of_batches, "key", "Iterations indicate batches for testing current model")
         
         # Cancel if progress bar was cancelled
         if not proceed:
-            print("Testing was cancelled")
-            return None
+            print("Testing ended")
+            break
+            #return None
         else:    
-            XBatch = loadBatchImages(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
-            
-            # Score the model on this batch of test data
+            XBatch = load_batch_images(XBatch, useGrayscale=useGrayscale, pca=pca, flatten=flatten)
+                        
+            # Score the model accuracy on this batch of test data
+            # and count # of correct predictions
             accuracy = model.score(XBatch, yBatch)
             correct += accuracy*samples_per_batch
             
-            ### TODO: F1-score
+            # Record predicted and actual labels for F1 calculation
+            predictions.extend(model.predict(XBatch))
+            targets.extend(yBatch)
+            
             print("Accuracy of batch: {}".format(accuracy))
             print("Number of correct predictions so far: {}".format(correct))
             i += 1
             print("Batch {} complete for testing current model".format(i))
 
+    # Compute overall F1 score, precision, recall and accuracy
+    precision, recall, f1score, _ = precision_recall_fscore_support(targets, predictions, average='micro')
+    
     print("Overall accuracy: {}".format(correct/totalTest))
+    print("Precision: {}".format(precision))
+    print("Recall: {}".format(recall))
+    print("F1 score: {}".format(f1score))
+    
+    return (precision, recall, f1score)
 
-def trainBayes(X_train, X_test, y_train, y_test, random_state):
+
+def batchGenerator(lst, samples_per_batch):
+    """Generator yielding successive chunks from lst, of size "samples_per_batch"."""
+    # https://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks
+        
+    for i in range(0, len(lst), samples_per_batch):
+        yield lst[i:i + samples_per_batch]
+
+def getBatches(X, y, samples_per_batch):
+    """
+    
+    Creates batch generators for X and y.
+
+    Parameters
+    ----------
+    X : Numpy array
+        Array of data to be split into batches.
+    y : Numpy array
+        Array of labels corresponding to X, to be split into batches.
+    samples_per_batch : int
+        The number of data samples to include in each batch
+
+    Returns
+    -------
+    batches: a generator that yields successive batches from X, of size samples_per_batch
+    batch_labels: a generator that yields successive batches from y, of size samples_per_batch
+    number_of_batches: integer count of the number of batches
+
+    """
+    # Split the data and labels into batches
+    batches = batchGenerator(X, samples_per_batch)
+    batch_labels = batchGenerator(y, samples_per_batch)
+    number_of_batches = len(list(batchGenerator(y, samples_per_batch)))
+    
+    return (batches, batch_labels, number_of_batches)    
+
+def cross_validate(model, param_grid, X_valid, y_valid):
+    """
+    Perform 5-fold cross-validation on a model, using micro-averaged F1 score on a 
+    provided validation set.
+
+    Parameters
+    ----------
+    model : the sklearn model to validate on
+    param_grid : dict
+        Uses parameter names (str) for the model as keys, and maps them
+        to a list of parameter settings to try.
+        See: https://scikit-learn.org/stable/modules/generated/sklearn.model_selection.GridSearchCV.html
+    X_valid : Numpy array
+        The image data to validate over
+    y_valid : Numpy array
+        Labels for the image data
+        
+    Returns
+    -------
+    a dictionary mapping the parameter names to the settings
+    which gave the best results on the validation set
+
+    """
+    
+    # Perform cross validation on the given model, with 5-fold cross validation by default
+    gridsearch = GridSearchCV(estimator=model, 
+                     param_grid=param_grid, 
+                     verbose=1, 
+                     scoring='f1_micro') 
+    gridsearch.fit(X_valid, y_valid)
+    
+    print(gridsearch.best_params_)
+    return gridsearch.best_params_
+
+def train_test(model, X_train, y_train, X_test, y_test):
+    """
+        Train and test a provided model.
+    """
+    
+    model.fit(X_train, y_train)
+    accuracy = model.score(X_test, y_test)
+    predictions = model.predict(X_test)
+    
+    # Compute overall F1 score, precision, recall and accuracy
+    precision, recall, f1score, _ = precision_recall_fscore_support(y_test, predictions, average='micro')
+    
+    print("Overall accuracy: {}".format(accuracy))
+    print("Precision: {}".format(precision))
+    print("Recall: {}".format(recall))
+    print("F1 score: {}".format(f1score))
+    
+    return {"accuracy": accuracy, 
+            "precision": precision, 
+            "recall": recall, 
+            "f1": f1score}
+
+def train_bayes(X_train, X_test, y_train, y_test, random_state):
     print("Training Bayes model...")
     
     # Prepare Bayes model
     bayes = GaussianNB()
     
-    # First do cross-validation on a batch(?) to estimate parameters
-    # Try different var_smoothing values (default is 1e-9)
-    # Test 10 candidates, using 5-fold cross validation by default
+    # Cross-validation to estimate var_smoothing value (default is 1e-9)
     # https://stackoverflow.com/questions/39828535/how-to-tune-gaussiannb
-    #params_NB = {'var_smoothing': np.logspace(0,-9, num=2)}
-    #gs_NB = GridSearchCV(estimator=bayes, 
-    #                 param_grid=params_NB, 
-    #                 verbose=1, 
-    #                 scoring='f1_micro') 
-    #gs_NB.fit(X_train, y_train)
+    param_grid = {'var_smoothing': np.logspace(0,-9, num=10)}
+
+    params = cross_validate(bayes, param_grid, X_train, y_train)            
+    print("Best parameters found: {}".format(params))
     
-    #params = gs_NB.best_params_
-    #print(params)
-    # Train using the best parameter
-    # var_smoothing=params["var_smoothing"]
+    # Train using the best parameters and evaluate
+    bayes = GaussianNB(var_smoothing=params["var_smoothing"])
+    metrics = train_test(bayes, X_train, y_train, X_test, y_test)
+    
+    return metrics
     
     # Train model in batches, applying grayscale, PCA and flattening the image data
-    bayes = trainLoop(bayes, X_train, y_train, samples_per_batch, useGrayscale=True, pca=True, flatten=True)
+    #bayes = trainLoop(bayes, X_train, y_train, samples_per_batch, useGrayscale=True, pca=True, flatten=True)
     
-    #### Cancel training quickly, TODO: make cancellation more proper
-    if bayes is None:
-        return
-    
-    print("Testing Bayes model...")
-    testLoop(bayes, X_test, y_test, samples_per_batch, useGrayscale=True, pca=True, flatten=True)
+    #print("Testing Bayes model...")
+    #testLoop(bayes, X_test, y_test, samples_per_batch, useGrayscale=True, pca=True, flatten=True)
 
 def train(data):
     """
@@ -270,18 +287,31 @@ def train(data):
         # Randomly split data into 80% training and 20% test
         X_train, X_test, y_train, y_test = data.splitData(random_state=random)
         
-        # Train Gaussian Naive Bayes model
-        bayesAcc = trainBayes(X_train, X_test, y_train, y_test, random)
-        modelAccuracies["bayes"].append(bayesAcc)
+        # Split the test data (X_test) and labels (y_test) into batches
+        # Shuffle batches?
+        batched_X_train, batched_y_train, number_of_batches = getBatches(X_train, y_train, samples_per_batch)
+        
+        # For Bayes and SVM, load the images in batches and run isomap reduction
+        reduced_X_train = load_reduced_batches(batched_X_train)
+        
+        # Load test data in same way
+        batched_X_test, batched_y_test, number_of_batches = getBatches(X_test, y_test, samples_per_batch)
+        reduced_X_test = load_reduced_batches(batched_X_test)
+
+        # Cross-validate and train on the processed training set
+        bayes_metrics = train_bayes(reduced_X_train, reduced_X_test, y_train, y_test, random)  # Naive Bayes
+        modelAccuracies["bayes"].append(bayes_metrics)
         
         # Train SVM
         
         # Train CNN
         
     # Display and save results of training
+    best_model = None
+    
+    return best_model
 
-
-def predict(image):
+def predict(image, model):
     """
     Uses the current model to predict what white blood cell is in the given image.
 
@@ -290,7 +320,14 @@ def predict(image):
 
     """
     
-    pass
+    # Load image
+    
+    # Check that it matches the required dimensions
+    
+    # Run model and show prediction
+    predictions = model.predict([image])
+    class_name = Data.class_map[predictions[0]]
+    sg.Popup("The predicted class is {}".format(class_name))
 
 def process_image(image):
     
@@ -310,8 +347,6 @@ augDir = r"augmented"
 data = Data()
 
 samples_per_batch = 500
-
-#train(data)
 
 # Set the layout of the GUI
 MAX_INPUT_LENGTH = 5
