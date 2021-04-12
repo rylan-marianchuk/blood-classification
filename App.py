@@ -144,27 +144,70 @@ def train_bayes(X_train, X_test, y_train, y_test):
 
     params = cross_validate(bayes, param_grid, X_train, y_train)            
     print("Best parameters found: {}".format(params))
-    
+
     # Train using the best parameters and evaluate
     bayes = GaussianNB(var_smoothing=params["var_smoothing"])
     bayes, metrics = train_test(bayes, X_train, y_train, X_test, y_test)
     
     return (bayes, metrics, params)
 
+def process_record(model, model_data, metrics, params):
+    """
+    Processes a new model record.
+
+    Parameters
+    ----------
+    model : 
+        trained model object
+    model_data : dictionary with keys "best_model",
+        "best_params", "best_score", "scores"
+    metrics : dict
+        contains scores from recent model training
+    params : dict
+        contains parameters of the given model
+
+    Returns
+    -------
+    None.
+
+    """
+    
+    # Get the latest model score
+    score = metrics[KEY_SCORE]
+        
+    # Update model data with training results
+    model_data["scores"].append(score)
+        
+    # Update best model of this type
+    if score > model_data["best_score"]:
+        # Save new best model
+        model_data["best_score"] = score
+        model_data["best_model"] = model
+        model_data["best_params"] = params
+
 def train():
     """
     Trains the Naive Bayes, SVM and CNN models, and evaluates them with test data.
     
     Returns:
-        the best model according to micro-averaged F1 score
+        the best model and its name
     
     """
 
-    # Store final accuracies of each model across random states
+    # Store record of each model across random states
     model_record = {
-        "bayes": [],
-        "svm": [],
-        "cnn": []
+        "Bayes": {"best_model": None,   # Best Bayes model + parameters
+                  "best_params": None,
+                  "best_score": 0,
+                  "scores": []},    # List of scores for each run
+        "SVM": {"best_model": None,
+                  "best_params": None,
+                  "best_score": 0,
+                  "scores": []},
+        "CNN": {"best_model": None,
+                  "best_params": None,
+                  "best_score": 0,
+                  "scores": []}
         }
     
     data = Data(scale=0.25)
@@ -174,6 +217,8 @@ def train():
     for random in range(0, 1):
         # Randomly split data into 80% training and 20% test
         X_train, X_test, y_train, y_test = data.splitData(random_state=random)
+        #print(len(X_train))
+        #print(len(X_test))
         
         # Train CNN with colour images
         
@@ -181,48 +226,36 @@ def train():
         X_train = data.extra_processing(X_train, grayscale=True, flatten=True)
         X_test = data.extra_processing(X_test, grayscale=True, flatten=True)
         
-        #print(len(X_train))
-        #print(len(X_test))
-        
-        bayes, bayes_metrics, params = train_bayes(X_train, X_test, y_train, y_test, random)
-        model_record["bayes"].append({"model": bayes,
-                                         "metrics": bayes_metrics,
-                                         "params": params})
+        # Train Bayes and record metrics
+        bayes, metrics, params = train_bayes(X_train, X_test, y_train, y_test)
+        process_record(bayes, model_record["Bayes"], metrics, params)
     
+    # TODO: GUI
     # Display results of training
-    print(model_record)
+    print("Overall results: {}".format(model_record))
     
-    # Determine the best model
-    averages = []         # Average accuracies for each model type across runs
-    best_models = []      # Best model of each type
+    # Determine the best model by comparing average scores
+    best_average = 0
+    best_model_name = None
+    best_params = None
+    best_model = None
     
-    for m in model_record:
-        total_score = 0
-        i = 0
-        best_model = None
-        best_params = None
-        best_score = 0     # Track the highest score for this model type
-        
-        for record in m:
-            # Sum the score from each run
-            score = record[i]["metrics"][KEY_SCORE]
-            total_score += score
-            i += 1
-            
-            # Track the best-performing model of each type
-            if best_model is None or score > best_score:
-                best_model = record[i]["model"]
-                best_params = record[i]["params"]
-        
-        # Average score for this model type
-        average = total_score/i
-        averages.append(average)
-        best_models.append(best_model)
+    # Loop over each type of model
+    for model_name, record in model_record.items():
+        if record["scores"]:
+            av = sum(record["scores"])/len(record["scores"])   # Model's average score
+            if av > best_average:
+                best_average = av
+                best_model_name = model_name
+                best_params = record["best_params"]
+                best_model = record["best_model"]
     
-    # Get index of model with best average accuracy
-    model_index = averages.index(max(averages))
+    # Show best model name and parameters
+    print("Best model: {}".format(best_model_name))
+    print("Average accuracy: {}".format(best_average))
+    print("Parameters: {}".format(best_params))
     
-    return best_models[model_index]
+    return (best_model, best_model_name)
 
 def predict(image_file, model, data):
     """
@@ -282,8 +315,6 @@ def save_model(model):
 # Get original dataset
 #data = Data()
 
-#filename = "blah"
-
 #bayes = GaussianNB()
 #pickle.dump(bayes, open(filename, "wb" ))
 
@@ -317,13 +348,14 @@ while True:
     
     elif event == "Load Model":
     # Select an existing model from a file
-        file = window["--"]
-        window['--MODEL--'].update("Current Model: Test")
+        file = window["--LOAD--"]
+        model, model_name = load_model(file)
+        window['--MODEL--'].update("Current Model: {}".format(model_name))
     
     elif event == "Train Models":
     # Retrain the models
-        model = train()
-        window['--MODEL--'].update("Current Model: Test")
+        model, model_name = train()
+        window['--MODEL--'].update("Current Model: {}".format(model_name))
         
     elif event == "--PREDICT--":
         # Run prediction on a user-provided image
