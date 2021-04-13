@@ -14,6 +14,7 @@ Pytorch coding style inspired by/adapted from:
 '''
 
 
+# As in https://github.com/usuyama/pytorch-unet/blob/master/pytorch_unet.py
 def double_conv(in_channels, out_channels):
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, 3, padding=1),
@@ -87,6 +88,7 @@ class Unet(nn.Module):
         return out
 
 
+# train a CNN for a single epoch on a given dataset
 def train(dataloader, model, loss_fn, optim, device):
     size = len(dataloader.dataset)
     for batch, (X, y) in enumerate(dataloader):
@@ -105,6 +107,7 @@ def train(dataloader, model, loss_fn, optim, device):
             print('loss: {} [{}/{}]'.format(loss, current, size))
 
 
+# this development function prints and returns test set metrics
 def test(dataloader, model, loss_fn, device):
     size = len(dataloader.dataset)
     model.eval()
@@ -128,6 +131,7 @@ def test(dataloader, model, loss_fn, device):
     return correct, loss, f1_macro
 
 
+# load the data as required for CNN training
 def load_data(val_proportion=0.1, scale=0.55, batch_size=16):
     print('Loading Dataset for CNN')
     data = Data(scale=scale, normalize=True)
@@ -143,45 +147,52 @@ def load_data(val_proportion=0.1, scale=0.55, batch_size=16):
     return train_dl, test_dl
 
 
-def finetune_cnn(verbose=False, epochs=1):
+# This method performs hyperparameter search
+def finetune_cnn(verbose=False, epochs=2, seed=0):
+    print('Training CNN...')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if verbose:
         print('Using {} device'.format(device))
     best_model = None
     best_model_score = -1
-    for seed in [0, 1, 2]:
-        torch.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        train_dl, test_dl = load_data(val_proportion=0.2, scale=0.1, batch_size=16)
-        loss_fn = nn.CrossEntropyLoss().to(device)
-        for learning_rate in [1e-2, 1e-3, 1e-4]:
-            for optimizer_name in ['sgd', 'adam']:
-                model = Unet().to(device)
-                if optimizer_name == 'sgd':
-                    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
-                else:
-                    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-                model.train()
+    best_model_params = None
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    train_dl, test_dl = load_data(val_proportion=0.2, scale=0.1, batch_size=16)
+    # These class weights attempt to prevent the network from learning to
+    # only predict the majority class
+    class_weights = torch.Tensor([1, 1, 1, 0.6])
+    loss_fn = nn.CrossEntropyLoss(weight=class_weights).to(device)
+    for learning_rate in [1e-4]:#, 1e-3]:
+        for optimizer_name in ['adam', 'sgd']:
+            model = Unet().to(device)
+            if optimizer_name == 'sgd':
+                optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+            else:
+                optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+            model.train()
+            if verbose:
+                print('Model Training Beginning')
+            for t in range(epochs):
                 if verbose:
-                    print('Model Training Beginning')
-                for t in range(epochs):
-                    if verbose:
-                        print(f'Epoch {t+1}\n--------------------------------')
-                    train(train_dl, model, loss_fn, optimizer, device)
-                    acc, loss, f1 = test(test_dl, model, loss_fn, device)
-                if verbose:
-                    print('Model Training Finished')
-                if f1 > best_model_score:
-                    best_model = model
-                del model
-    if verbose:
-        print('The best model had:\n random seed = {},\n'.format(seed) +
-              ' learning rate = {},\n optimizer = {},\n'.format(learning_rate,
-                                                                optimizer_name))
-    return best_model
+                    print(f'Epoch {t+1}\n--------------------------------')
+                train(train_dl, model, loss_fn, optimizer, device)
+                acc, loss, f1 = test(test_dl, model, loss_fn, device)
+            if verbose:
+                print('Model Training Finished')
+            if f1 > best_model_score:
+                model.cpu()
+                best_model = model
+                best_model_params = {'optimizer': optimizer_name,
+                                     'learning_rate': learning_rate}
+    best_model.to(device)
+    metrics = test_unet(test_dl, best_model, loss_fn, device)
+    best_model.cpu()
+    return best_model, metrics, best_model_params
 
 
+# function to evaluate a unet on a given dataset, returns dictionary
 def test_unet(dataloader, model, loss_fn, device):
     size = len(dataloader.dataset)
     model.eval()
@@ -203,6 +214,7 @@ def test_unet(dataloader, model, loss_fn, device):
     return {'accuracy': acc, 'f1_macro': f1_macro}
 
 
+# this function can be used to train a single (the best) unet only
 def train_unet():
     print('Training CNN...')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'

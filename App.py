@@ -28,10 +28,10 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import SVC
 from sklearn.metrics import precision_recall_fscore_support, f1_score
 
-from unet import train_unet
+from unet import train_unet, finetune_cnn
 import torch
 
-from preprocess import Data  
+from preprocess import Data
 
 KEY_SCORE = "f1_macro"
 BAYES_SCALE = 0.25
@@ -167,13 +167,13 @@ def train_svm(X_train, X_test, y_train, y_test, seed):
     Train the SVM and evaluate on the test set.
     """
     print('Training SVM...')
-    svm = SVC(kernel='poly', random_state=seed, verbose=0, max_iter=2500)
+    svm = SVC(verbose=0, max_iter=-1)
     # sigmoid and linear kernels achieve poorer results
     gridsearch = GridSearchCV(estimator=svm,
                               param_grid={'kernel': ['poly', 'rbf'],
                                           'C': [10, 100],
                                           'tol': [1e-3],
-                                          'random_state': [0]},
+                                          'random_state': [seed]},
                               verbose=0,
                               scoring='f1_macro')
     # select the best model via cross validation
@@ -224,7 +224,7 @@ def process_record(model, model_data, metrics, params):
 
 def train():
     """
-    Trains the Naive Bayes, SVM and CNN models, and evaluates them with test data.
+n    Trains the Naive Bayes, SVM and CNN models, and evaluates them with test data.
     
     Returns:
         the best model and its name
@@ -258,21 +258,23 @@ def train():
         X_train, X_test, y_train, y_test = data.splitData(random_state=random)
         #print(len(X_train))
         #print(len(X_test))
-        
+
         # Train CNN with colour images
-        cnn, metrics, params = train_unet()
+        cnn, metrics, params = finetune_cnn(epochs=1, seed=random)
         process_record(cnn, model_record["CNN"], metrics, params)
-        
+
         # Train Bayes and SVM with grayscale and flattening
         X_train = Data.extra_processing(X_train, grayscale=True, flatten=True)
         X_test = Data.extra_processing(X_test, grayscale=True, flatten=True)
-        
+
         # Train Bayes and record metrics
         bayes, metrics, params = train_bayes(X_train, X_test, y_train, y_test)
         process_record(bayes, model_record["Bayes"], metrics, params)
 
         # Train SVM and record metrics
-        # TODO: we should try to do this a less hacky way
+        # Reduce the training and test set, keeping the 80/20 split
+        # The svm doesn't improve significantly with more augmented data,
+        # and it's training time si O(n^2) in the number of training samples
         svm_X_train = X_train[:500]
         svm_y_train = y_train[:500]
         svm_X_test = X_test[:100]
@@ -348,7 +350,7 @@ def predict(image_file, model):
             image_list.append(im)
             image_list = np.array(image_list)
             image_list = Data.extra_processing(image_list, grayscale=True, flatten=True)
-            
+
         # Run model and show prediction
         predictions = model.predict(image_list[0].reshape(-1, 1))
         class_name = Data.class_map[predictions[0]]
