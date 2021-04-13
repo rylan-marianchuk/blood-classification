@@ -26,7 +26,7 @@ class Data:
     Y = []
     
     normalized = False
-    def __init__(self, scale, normalize=False, read_from_disk=False, save_to_disk=False):
+    def __init__(self, scale, dups=25, normalize=False, read_from_disk=False, save_to_disk=False):
         """
         Read in the augmented data which is ready for models
 
@@ -55,7 +55,7 @@ class Data:
                 i += 1
 
         else:
-            self.augment(scale, save_to_disk)
+            self.augment(scale, dups, save_to_disk)
             self.X = np.array(self.X)
             self.Y = np.array([self.class_map[s] for s in self.Y])
         
@@ -150,18 +150,19 @@ class Data:
         return
 
 
-    def augment(self, scale, save_to_disk=False):
+    def augment(self, scale, dups=33, save_to_disk=False):
         """
         Run on each instance of this class
 
         Augmentations to apply:
         :param scale float how much to resize width and height before augmenting
+        :param dupes int  number of duplications of each image to make when augmenting
         :param save_to_disk: if True, all augmented images are saved, otherwise just loaded into self.X
         :return: augmented dataset
         """
 
         # How many duplications of non augmented needed
-        dups = 25
+        dups = 5
 
         # Reading csv for label
         df = pd.read_csv(r"dataset-master/dataset-master/labels.csv")
