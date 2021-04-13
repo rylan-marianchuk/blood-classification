@@ -33,6 +33,7 @@ import torch
 
 from preprocess import Data
 
+
 KEY_SCORE = "f1_macro"
 BAYES_SCALE = 0.25
 
@@ -224,7 +225,7 @@ def process_record(model, model_data, metrics, params):
 
 def train():
     """
-n    Trains the Naive Bayes, SVM and CNN models, and evaluates them with test data.
+    Trains the Naive Bayes, SVM and CNN models, and evaluates them with test data.
     
     Returns:
         the best model and its name
