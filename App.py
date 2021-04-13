@@ -30,6 +30,11 @@ from sklearn.metrics import precision_recall_fscore_support
 from preprocess import Data  
 
 KEY_SCORE = "f1_macro"
+BAYES_SCALE = 0.25
+
+# For GUI fields
+MAX_INPUT_LENGTH = 3
+DEFAULT_LOOPS = 5
 
 def cross_validate(model, param_grid, X_valid, y_valid):
     """
@@ -89,6 +94,7 @@ def train_test(model, X_train, y_train, X_test, y_test):
 
     """
     
+    # Train and score the model
     model.fit(X_train, y_train)
     accuracy = model.score(X_test, y_test)
     predictions = model.predict(X_test)
@@ -211,13 +217,13 @@ def train():
         }
     
     print("Laoding and augmenting data...")
-    data = Data(scale=0.25)
+    data = Data(scale=BAYES_SCALE)
     
     # Train and run models with different random states
     ### limited to 1 value for now
-    for random in range(0, 3):
+    for random in range(0, num_loops):
         # Randomly split data into 80% training and 20% test
-        print("Splitting data...")
+        print("\nSplitting data...")
         X_train, X_test, y_train, y_test = data.splitData(random_state=random)
         #print(len(X_train))
         #print(len(X_test))
@@ -225,8 +231,8 @@ def train():
         # Train CNN with colour images
         
         # Train Bayes and SVM with grayscale and flattening
-        X_train = data.extra_processing(X_train, grayscale=True, flatten=True)
-        X_test = data.extra_processing(X_test, grayscale=True, flatten=True)
+        X_train = Data.extra_processing(X_train, grayscale=True, flatten=True)
+        X_test = Data.extra_processing(X_test, grayscale=True, flatten=True)
         
         # Train Bayes and record metrics
         bayes, metrics, params = train_bayes(X_train, X_test, y_train, y_test)
@@ -285,10 +291,24 @@ def predict(image_file, model):
         sg.Popup("Selected image does not have 640x480 dimensions")
     else:
         # Process the image as needed, according to the model
-        #if 
+        model_class = model.__class__.__name__
+        image_list = []
+        print(model_class)
         
+        print("Processing image sample...")
+        
+        ### TODO: check SVM / CNN as well
+        if model_class == "GaussianNB":
+            # Scale down, convert image to grayscale and flatten
+            scale = BAYES_SCALE
+            im = im.resize((int(im.size[0]*scale), int(im.size[1]*scale)), Image.BICUBIC)
+            im = np.array(im)
+            image_list.append(im)
+            image_list = np.array(image_list)
+            image_list = Data.extra_processing(image_list, grayscale=True, flatten=True)
+            
         # Run model and show prediction
-        predictions = model.predict([im])
+        predictions = model.predict(image_list[0].reshape(-1, 1))
         class_name = Data.class_map[predictions[0]]
         sg.Popup("The predicted class is {}".format(class_name))
         
@@ -312,10 +332,9 @@ def load_model(file):
     if file:
         with open(file, "rb") as f:
             model_data = pickle.load(f)
-            print(model_data)
             model = model_data["model"]
             model_name = model_data["model_name"]
-        
+
     return (model, model_name)
 
 
@@ -385,14 +404,17 @@ def save_model(model_name, model, file):
         pickle.dump(model_data, open(file, "wb" ))
         sg.Popup("Model saved!")
 
+
+
 # Set the layout of the GUI
 layout = [[sg.Text("CPSC 599 - White Blood Cell Classifier")], 
           [sg.Text("Celina Ma, Rylan Marianchuk, Sam Robertson")],
           [sg.Input(key='-LOADEDFILE-', visible=False, enable_events=True), \
            sg.FileBrowse(button_text="Load Model", target="-LOADEDFILE-", \
                          file_types=(("All files", "*.*"), ("No extension", ""), ("ALL files", "*")), key="--LOAD--"), \
-           sg.Button("Train Models")],
-              
+           sg.Button("Train Models"),
+           sg.Text("Number of Random States"), sg.Input(default_text=str(DEFAULT_LOOPS), enable_events=True, \
+                                                        size=(MAX_INPUT_LENGTH,1),  key='-LOOPS-')],
           [sg.Text("Current Model: None", key="--MODEL--")],
           [sg.In(size=(50, 1), enable_events=True, key="--IMAGE--"), \
            sg.FileBrowse(button_text="Select Image", file_types=(("PNG Files", "*.png"), ("JPG Files", "*.jpg"),) )],
@@ -404,6 +426,7 @@ layout = [[sg.Text("CPSC 599 - White Blood Cell Classifier")],
 window = sg.Window("White Blood Cell Classifier", layout)
 model = None
 model_name = None
+num_loops = DEFAULT_LOOPS
 
 # Create an event loop
 while True:
@@ -419,13 +442,28 @@ while True:
     # Select an existing model from a file
         file = values["-LOADEDFILE-"]
         model, model_name = load_model(file)
-        print(model_name)
-        window['--MODEL--'].update("Current Model: {}".format("bayes"))
+        window['--MODEL--'].update("Current Model: {}".format(model_name))
     
     elif event == "Train Models":
     # Retrain the models
         model, model_name = train()
         window['--MODEL--'].update("Current Model: {}".format(model_name))
+        
+    elif event == '-LOOPS-' and values['-LOOPS-']:
+        # Very basic input validation for number of loops
+        # Check input length
+        if len(values['-LOOPS-']) > 3:
+            window.Element('-LOOPS-').Update(values['-LOOPS-'][:-1])
+        else:
+            # Check that field can be converted to int
+            # https://pysimplegui.readthedocs.io/en/latest/cookbook/#recipe-input-validation
+            try:
+                in_as_int = int(values['-LOOPS-'])
+                num_loops = in_as_int
+            except:
+                if len(values['-LOOPS-']) == 1 and values['-LOOPS-'][0] == '-':
+                    continue
+                window['-LOOPS-'].update(values['-LOOPS-'][:-1])
         
     elif event == "--PREDICT--":
         # Run prediction on a user-provided image
@@ -434,9 +472,7 @@ while True:
         # Load the image and process it
         if image != "":
             predict(image, model)
-        
-            #if error:
-            #    sg.Popup('Error message')
+
         elif image == "":
             sg.Popup('Please select an image to predict.')
         
