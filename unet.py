@@ -3,27 +3,14 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset, random_split
 from sklearn.metrics import f1_score
-import matplotlib.pyplot as plt
 import numpy as np
 import random
-# cite
-# https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
-# https://github.com/usuyama/pytorch-unet/blob/master/pytorch_unet.py
-# https://github.com/usuyama/pytorch-unet/blob/master/pytorch_unet.py
-
 '''
-NOTES
-finetuning list:
-- adam vs sgd
-- lr 1e-2 vs 1e-3 vs 1e-4
-bugs:
-- why does accuracy and f1 never change much after 1 epoch?
+Pytorch coding style inspired by/adapted from:
+ https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 
-TODO
-finish up the svm finetuning loop and add it and the CNN to the gui
-add the cnn to the gui
-ensure that we're not testing on augmented data of source images seen in training (and not augmenting testing data at all)
-write the individual system report and peer review
+@author Sam
+
 '''
 
 
@@ -36,8 +23,15 @@ def double_conv(in_channels, out_channels):
     )
 
 
-# TODO add dropout
 class Unet(nn.Module):
+    '''
+    Architecure based on unet, popular for semantic segmentation in biomedical
+    applications. Adapted to be smaller and with added fully connected layers
+    at the end to convert to one-hot encoded probablistic class scores.
+    Uses dropout.
+    Adapted from the architecture of
+    https://github.com/usuyama/pytorch-unet/blob/master/pytorch_unet.py
+    '''
 
     def __init__(self):
         super(Unet, self).__init__()
@@ -129,17 +123,17 @@ def test(dataloader, model, loss_fn, device):
             y_true.extend(y.cpu().numpy())
     loss /= size
     correct /= size
-    f1_macro = f1_score(y_true, pred_list, average='macro')#TODO is this right?
+    f1_macro = f1_score(y_true, pred_list, average='macro')
     print('Test Metrics:\n Accuracy: {}%\n Avg loss: {}\n Macroaveraged F1: {}\n'.format(100*correct, loss, f1_macro))
     return correct, loss, f1_macro
 
 
 def load_data(val_proportion=0.1, scale=0.55, batch_size=16):
     print('Loading Dataset for CNN')
-    data = Data(scale=scale, normalize=True)  # TODO .55 for real training
+    data = Data(scale=scale, normalize=True)
     X = torch.tensor(data.X).permute(0, 3, 1, 2)
     y = torch.tensor(data.Y)
-    data = TensorDataset(X, y)# nn.functional.one_hot(torch.tensor(data.Y)))
+    data = TensorDataset(X, y)
     n = len(data)
     train_size = int(n * val_proportion)
     test_size = n - train_size
@@ -188,23 +182,45 @@ def finetune_cnn(verbose=False, epochs=1):
     return best_model
 
 
-# params = finetune_cnn(True)
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
-print('Using {} device'.format(device))
+def test_unet(dataloader, model, loss_fn, device):
+    size = len(dataloader.dataset)
+    model.eval()
+    loss, correct = 0, 0
+    pred_list = []
+    y_true = []
+    with torch.no_grad():
+        for X, y in dataloader:
+            X, y = X.to(device), y.to(device)
+            pred = model(X)
+            loss += loss_fn(pred, y).item()
+            pred = torch.argmax(pred, dim=1)
+            correct += (pred == y).type(torch.float).sum().item()
+            # accumulate info for f1 score
+            pred_list.extend(pred.cpu().numpy())
+            y_true.extend(y.cpu().numpy())
+    acc = correct / size
+    f1_macro = f1_score(y_true, pred_list, average='macro')
+    return {'accuracy': acc, 'f1_macro': f1_macro}
 
-torch.manual_seed(0)
-np.random.seed(0)
-random.seed(0)
-train_dl, test_dl = load_data(val_proportion=0.2, scale=0.1, batch_size=16)
-model = Unet().to(device)
-# print(model)
-loss_fn = nn.CrossEntropyLoss().to(device)
-# optimizer = torch.optim.SGD(model.parameters(), lr=1e-3)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-epochs = 5
-model.train()
-for t in range(epochs):
-    print(f"Epoch {t+1}\n-------------------------------")
-    train(train_dl, model, loss_fn, optimizer, device)
-    test(test_dl, model, loss_fn, device)
-print("Done!")
+
+def train_unet():
+    print('Training CNN...')
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print('Using {} device'.format(device))
+
+    torch.manual_seed(0)
+    np.random.seed(0)
+    random.seed(0)
+    train_dl, test_dl = load_data(val_proportion=0.2, scale=0.1, batch_size=16)
+    model = Unet().to(device)
+    loss_fn = nn.CrossEntropyLoss().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+    epochs = 5
+    model.train()
+    for t in range(epochs):
+        print(f"Epoch {t+1}\n-------------------------------")
+        train(train_dl, model, loss_fn, optimizer, device)
+    metrics = test_unet(test_dl, model, loss_fn, device)
+    params = {'optimizer': 'adam', 'loss': 'crossentropy', 'lr': 1e-4}
+    print('Done Training CNN')
+    return model, metrics, params
