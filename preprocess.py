@@ -161,7 +161,7 @@ class Data:
         """
 
         # How many duplications of non augmented needed
-        dups = 33
+        dups = 25
 
         # Reading csv for label
         df = pd.read_csv(r"dataset-master/dataset-master/labels.csv")
