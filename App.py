@@ -3,11 +3,11 @@
 
 REQUIRED PYTHON PACKAGE INSTALLATION:
     PySimpleGUI: pip3 install pysimplegui
-    PIL: 
-    Numpy: 
+    PIL: pip3 install Pillow
+    Numpy: pip3 install numpy
     sklearn: pip3 install sklearn
     imgaug: pip3 install imgaug
-    imageio: 
+    imageio: pip3 install imageio
     pandas: pip3 install pandas
     torch: pip3 install torch
 
@@ -38,7 +38,7 @@ BAYES_SCALE = 0.25
 
 # For GUI fields
 MAX_INPUT_LENGTH = 3
-DEFAULT_LOOPS = 5
+DEFAULT_LOOPS = 1
 
 def cross_validate(model, param_grid, X_valid, y_valid):
     """
@@ -248,16 +248,13 @@ n    Trains the Naive Bayes, SVM and CNN models, and evaluates them with test da
         }
     
     print("Loading and augmenting data...")
-    data = Data(scale=BAYES_SCALE)
+    data = Data(scale=BAYES_SCALE, dups=25)
     
     # Train and run models with different random states
-    ### limited to 1 value for now
     for random in range(0, num_loops):
         # Randomly split data into 80% training and 20% test
         print("\nSplitting data...")
         X_train, X_test, y_train, y_test = data.splitData(random_state=random)
-        #print(len(X_train))
-        #print(len(X_test))
 
         # Train CNN with colour images
         cnn, metrics, params = finetune_cnn(epochs=1, seed=random)
@@ -341,7 +338,6 @@ def predict(image_file, model):
         
         print("Processing image sample...")
         
-        ### TODO: check SVM / CNN as well
         if model_class == "GaussianNB":
             # Scale down, convert image to grayscale and flatten
             scale = BAYES_SCALE
@@ -403,24 +399,28 @@ def save_model_popup(model_record):
     layout2 = [        
         [sg.Input(visible=False, enable_events=True, key="-SAVEBAYES-"), sg.FileSaveAs(button_text="Save Bayes Model", target="-SAVEBAYES-")],
         [sg.Input(visible=False, enable_events=True, key="-SAVESVM-"), sg.FileSaveAs(button_text="Save SVM Model", target="-SAVESVM-")],
-        [sg.Input(visible=False, enable_events=True, key="-SAVECNN-"), sg.FileSaveAs(button_text="Save CNN Model", target="-SAVECNN-")]
+        [sg.Input(visible=False, enable_events=True, key="-SAVECNN-"), sg.FileSaveAs(button_text="Save CNN Model", target="-SAVECNN-"),]
         ]
 
     newWindow = sg.Window("Model Results", layout2)
-        
-    event, values = newWindow.Read()
     
-    # User chooses which model to save
-    if event == '-SAVEBAYES-':
-        file = values["-SAVEBAYES-"]
-        save_model("Bayes", model_record["Bayes"]["best_model"], file)
+    while True:
+        event, values = newWindow.Read()
         
-    elif event == "-SAVESVM-":
-        file = values["-SAVESVM-"]
-        save_model("SVM", model_record["SVM"]["best_model"], file)
-    elif event == "-SAVECNN-":
-        file = values["-SAVECNN-"]
-        save_model("CNN", model_record["CNN"]["best_model"], file)
+        # User chooses which model to save
+        # End program if user closes window
+        if event in (sg.WIN_CLOSED, "Exit"):
+            break
+        elif event == '-SAVEBAYES-':
+            file = values["-SAVEBAYES-"]
+            save_model("Bayes", model_record["Bayes"]["best_model"], file)
+            
+        elif event == "-SAVESVM-":
+            file = values["-SAVESVM-"]
+            save_model("SVM", model_record["SVM"]["best_model"], file)
+        elif event == "-SAVECNN-":
+            file = values["-SAVECNN-"]
+            save_model("CNN", model_record["CNN"]["best_model"], file)
 
 
 def save_model(model_name, model, file):
