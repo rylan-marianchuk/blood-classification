@@ -25,7 +25,11 @@ from PIL import Image
 from sklearn.model_selection import GridSearchCV
 
 from sklearn.naive_bayes import GaussianNB
-from sklearn.metrics import precision_recall_fscore_support
+from sklearn.svm import SVC
+from sklearn.metrics import precision_recall_fscore_support, f1_score
+
+from unet import train_unet
+import torch
 
 from preprocess import Data  
 
@@ -157,6 +161,33 @@ def train_bayes(X_train, X_test, y_train, y_test):
     
     return (bayes, metrics, params)
 
+
+def train_svm(X_train, X_test, y_train, y_test, seed):
+    """
+    Train the SVM and evaluate on the test set.
+    """
+    print('Training SVM...')
+    svm = SVC(kernel='poly', random_state=seed, verbose=0, max_iter=2500)
+    # sigmoid and linear kernels achieve poorer results
+    gridsearch = GridSearchCV(estimator=svm,
+                              param_grid={'kernel': ['poly', 'rbf'],
+                                          'C': [10, 100],
+                                          'tol': [1e-3],
+                                          'random_state': [0]},
+                              verbose=0,
+                              scoring='f1_macro')
+    # select the best model via cross validation
+    best_model = gridsearch.fit(X_train, y_train)
+    # save the hyperparameters selected for the best model
+    params = gridsearch.best_params_
+    # compute the scores for the best model
+    acc = best_model.score(X_test, y_test)
+    pred = best_model.predict(X_test)
+    f1_macro = f1_score(y_test, pred, average="macro")
+    metrics = {'accuracy': acc, 'f1_macro': f1_macro}
+    print('Done Training SVM')
+    return best_model, metrics, params
+
 def process_record(model, model_data, metrics, params):
     """
     Processes a new model record and updates the model's data.
@@ -216,7 +247,7 @@ def train():
                   "metrics": []}
         }
     
-    print("Laoding and augmenting data...")
+    print("Loading and augmenting data...")
     data = Data(scale=BAYES_SCALE)
     
     # Train and run models with different random states
@@ -229,6 +260,8 @@ def train():
         #print(len(X_test))
         
         # Train CNN with colour images
+        cnn, metrics, params = train_unet()
+        process_record(cnn, model_record["CNN"], metrics, params)
         
         # Train Bayes and SVM with grayscale and flattening
         X_train = Data.extra_processing(X_train, grayscale=True, flatten=True)
@@ -237,7 +270,16 @@ def train():
         # Train Bayes and record metrics
         bayes, metrics, params = train_bayes(X_train, X_test, y_train, y_test)
         process_record(bayes, model_record["Bayes"], metrics, params)
-    
+
+        # Train SVM and record metrics
+        # TODO: we should try to do this a less hacky way
+        svm_X_train = X_train[:500]
+        svm_y_train = y_train[:500]
+        svm_X_test = X_test[:100]
+        svm_y_test = y_test[:100]
+        svm, metrics, params = train_svm(svm_X_train, svm_X_test, svm_y_train, svm_y_test, random)
+        process_record(svm, model_record["SVM"], metrics, params)
+
     # TODO: GUI
     # Display results of training
     print("Overall results: {}".format(model_record))
@@ -378,17 +420,18 @@ def save_model_popup(model_record):
         file = values["-SAVECNN-"]
         save_model("CNN", model_record["CNN"]["best_model"], file)
 
+
 def save_model(model_name, model, file):
     """
-    Save the model name and object to a file 
+    Save the model name and object to a file
     in dictionary format.
-    
+
     Parameters
     ----------
     model_name : String name of model (eg. Bayes)
-    
+
     model : the model object
-        
+
     file: String name of file to save to
 
     Returns
@@ -396,12 +439,14 @@ def save_model(model_name, model, file):
     None.
 
     """
-    
     if file:
+        # if model_name == "CNN":
+        #     torch.save(model.state_dict(), file)
+        # else:
         # Save model name and object as dictionary
-        model_data = {"model_name": model_name, 
-                  "model": model}
-        pickle.dump(model_data, open(file, "wb" ))
+        model_data = {"model_name": model_name,
+                      "model": model}
+        pickle.dump(model_data, open(file, "wb"))
         sg.Popup("Model saved!")
 
 
