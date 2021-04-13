@@ -82,7 +82,7 @@ class Data:
         
         return (X_train, X_test, y_train, y_test)
     
-    def extra_processing(self, images, grayscale=False, flatten=False):
+    def extra_processing(images, grayscale=False, flatten=False):
         """
         Processes a provided Numpy array of image vectors according to the
         provided arguments.
@@ -119,7 +119,7 @@ class Data:
             processed_images.append(im)
         
         # Change to NP array
-        np.array(processed_images)
+        processed_images = np.array(processed_images)
             
         return processed_images
 
