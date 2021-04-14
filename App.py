@@ -18,7 +18,7 @@ Main application interface.
     
 import PySimpleGUI as sg      # Simple GUI library
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import pickle
 
 from PIL import Image
@@ -107,10 +107,10 @@ def train_test(model, X_train, y_train, X_test, y_test):
     # Compute overall F1 score, precision, recall and accuracy
     precision, recall, f1score, _ = precision_recall_fscore_support(y_test, predictions, average='macro')
     
-    print("Overall accuracy: {}".format(accuracy))
-    print("Precision: {}".format(precision))
-    print("Recall: {}".format(recall))
-    print("Macro-averaged F1 score: {}".format(f1score))
+    print("Overall accuracy: {:.3f}".format(accuracy))
+    print("Precision: {:.3f}".format(precision))
+    print("Recall: {:.3f}".format(recall))
+    print("Macro-averaged F1 score: {:.3f}".format(f1score))
     
     return (model, 
             {"accuracy": accuracy, 
@@ -254,9 +254,10 @@ def train(num_loops, use_bayes, use_svm, use_cnn):
     
     # Train and run models with different random states
     for random in range(0, num_loops):
+        print("\n-----Random state: {}------".format(random))
         if use_bayes:
             print("Loading and augmenting data for Bayes...")
-            data = Data(BAYES_SCALE, dups=5)
+            data = Data(BAYES_SCALE, dups=7)
             # Randomly split data into 80% training and 20% test
             print("\nSplitting data...")
             X_train, X_test, y_train, y_test = data.splitData(random_state=random)
@@ -292,14 +293,32 @@ def train(num_loops, use_bayes, use_svm, use_cnn):
     # Display results of training
     print("Overall results: {}".format(model_record))
     
-    best_model, best_model_name, best_average = compute_results(model_record)
+    best_model, best_model_name, model_record = compute_results(model_record)
     
     # Let user save models to file
-    save_model_popup(model_record, best_model_name, best_average)
+    save_model_popup(model_record, best_model_name)
     
     return (best_model, best_model_name)
 
 def compute_results(model_record):
+    """
+    
+
+    Parameters
+    ----------
+    model_record : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    best_model : TYPE
+        DESCRIPTION.
+    best_model_name : TYPE
+        DESCRIPTION.
+    best_average : TYPE
+        DESCRIPTION.
+
+    """
     
     # Determine the best model by comparing average scores
     best_average = 0
@@ -307,50 +326,37 @@ def compute_results(model_record):
     best_params = None
     best_model = None
     
-    average_results = {"Bayes": {
-            "accuracy": None,
-            "recall": None,
-            "precision": None,
-            "macro_f1": None
-        },
-        
-        "SVM": {
-            "accuracy": None,
-            "recall": None,
-            "precision": None,
-            "macro_f1": None
-        },
-            
-        "CNN": {
-            "accuracy": None,
-            "recall": None,
-            "precision": None,
-            "macro_f1": None
-        },
-    }
-    
     # Loop over each type of model
     for model_name, record in model_record.items():
+        model_record[model_name]["average_f1"] = 0
+        model_record[model_name]["average_acc"] = 0
+        
         if record["metrics"]:
-            # Compute model's average F1 score
+            # Compute model's average F1 score and accuracy
             total_f1 = 0
+            total_acc = 0
             for entry in record["metrics"]:
                 total_f1 += entry[KEY_SCORE]
+                total_acc += entry["accuracy"]
             
-            av = total_f1/len(record["metrics"])   
-            if av > best_average:
-                best_average = av
+            av_f1 = total_f1/len(record["metrics"])   
+            av_acc = total_acc/len(record["metrics"])   
+            model_record[model_name]["average_f1"] = av_f1
+            model_record[model_name]["average_acc"] = av_acc
+            
+            # Track model with the best score
+            if av_f1 > best_average:
+                best_average = av_f1
                 best_model_name = model_name
-                best_params = record["best_params"]
                 best_model = record["best_model"]
     
     # Show best model name and parameters
     print("Best model: {}".format(best_model_name))
     print("Average macro F1-score: {}".format(best_average))
     
-    return (best_model, best_model_name, best_average)
+    return (best_model, best_model_name, model_record)
 
-def save_model_popup(model_record):
+def save_model_popup(model_record, best_model_name):
     """
     Creates a popup window for saving the trained models
     and displaying training results.
@@ -369,14 +375,18 @@ def save_model_popup(model_record):
     # Show the training results in GUI
     # Make layout for save popup
     layout2 = [
-        [sg.Text("Best Bayes F1-Score: {}\tBest Bayes Params: {}".format(model_record["Bayes"]["best_score"],\
-                                                                          model_record["Bayes"]["best_params"]))],        
+        # Best model
+        [sg.Text("Best model: {}".format(best_model_name))],
+        
+        # Summary of models
+        [sg.Text("Bayes - Average F1-Score: {:.3f}\tAverage Accuracy: {:.3f}\tBest Params: {}".format(model_record["Bayes"]["average_f1"],\
+                                                            model_record["Bayes"]["average_acc"], model_record["Bayes"]["best_params"]))],        
         [sg.Input(visible=False, enable_events=True, key="-SAVEBAYES-"), sg.FileSaveAs(button_text="Save Bayes Model", target="-SAVEBAYES-")],
-        [sg.Text("Best SVM F1-Score: {}\tBest SVM Params: {}".format(model_record["SVM"]["best_score"],\
-                                                                          model_record["SVM"]["best_params"]))],
+        [sg.Text("SVM - Average F1-Score: {:.3f}\tAverage Accuracy: {:.3f}\tBest Params: {}".format(model_record["SVM"]["average_f1"],\
+                                                                model_record["SVM"]["average_acc"], model_record["SVM"]["best_params"]))],
         [sg.Input(visible=False, enable_events=True, key="-SAVESVM-"), sg.FileSaveAs(button_text="Save SVM Model", target="-SAVESVM-")],
-        [sg.Text("Best CNN F1-Score: {}\tBest CNN Params: {}".format(model_record["CNN"]["best_score"],\
-                                                                          model_record["CNN"]["best_params"]))],
+        [sg.Text("CNN - Average F1-Score: {:.3f}\tAverage Accuracy: {:.3f}\tBest Params: {}".format(model_record["CNN"]["average_f1"],\
+                                                                model_record["CNN"]["average_acc"],model_record["CNN"]["best_params"]))],
         [sg.Input(visible=False, enable_events=True, key="-SAVECNN-"), sg.FileSaveAs(button_text="Save CNN Model", target="-SAVECNN-"),]
         ]
 
