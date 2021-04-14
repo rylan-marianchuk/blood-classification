@@ -495,15 +495,16 @@ def predict(image_file, model):
             sg.Popup("The predicted class is {}".format(class_name))
             
         else:
-            scale = 0.55
-            im = im.resize((int(im.size[0]*scale), int(im.size[1]*scale)), Image.BICUBIC)
-            im = Data.normalize(im)
-            image_list.append(im)
-            image_list = torch.tensor(image_list).permute(0, 3, 1, 2)
-            prediction = model(image_list)
-            print(prediction)
-            class_name = Data.class_map[prediction]
-            sg.Popup("The predicted class is {}".format(class_name))
+            with torch.no_grad():
+                scale = 0.55
+                im = im.resize((int(im.size[0]*scale), int(im.size[1]*scale)), Image.BICUBIC)
+                im = Data.normalize(im)
+                image_list.append(im)
+                image_list = torch.tensor(image_list).permute(0, 3, 1, 2)
+                prediction = model(image_list)
+                prediction = torch.argmax(prediction).data.item()
+                class_name = Data.class_map[prediction]
+                sg.Popup("The predicted class is {}".format(class_name))
 
 # Set the layout of the GUI
 layout = [[sg.Text("CPSC 599 - White Blood Cell Classifier")], 
