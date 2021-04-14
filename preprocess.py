@@ -148,7 +148,25 @@ class Data:
                     img[i][j][1] = self.cream_bg[1]
                     img[i][j][2] = self.cream_bg[2]
         return
-
+    
+    def normalize(imagePIL):
+        """
+            Normalizes a provided image, loaded by Pillow, into a numpy array.
+        """
+        # Center crop
+        width, height = imagePIL.size  # Get dimensions
+        new_width, new_height = (265, 265)
+        left = (width - new_width) / 2
+        top = (height - new_height) / 2
+        right = (width + new_width) / 2
+        bottom = (height + new_height) / 2
+        
+        # Crop the center of the image
+        imagePIL = imagePIL.crop((left, top, right, bottom))
+        
+        # Convert to float 16 to normalize here
+        image_as_array = np.array(imagePIL).astype(np.float32) / 255
+        return image_as_array
 
     def augment(self, scale, dups=33, save_to_disk=False):
         """
@@ -160,9 +178,6 @@ class Data:
         :param save_to_disk: if True, all augmented images are saved, otherwise just loaded into self.X
         :return: augmented dataset
         """
-
-        # How many duplications of non augmented needed
-        dups = 5
 
         # Reading csv for label
         df = pd.read_csv(r"dataset-master/dataset-master/labels.csv")
@@ -185,19 +200,8 @@ class Data:
             imagePIL = imagePIL.resize((int(imagePIL.size[0]*scale), int(imagePIL.size[1]*scale)) , Image.BICUBIC)
 
             if self.normalized:
-                # Center crop
-                width, height = imagePIL.size  # Get dimensions
-                new_width, new_height = (265, 265)
-                left = (width - new_width) / 2
-                top = (height - new_height) / 2
-                right = (width + new_width) / 2
-                bottom = (height + new_height) / 2
+                image_as_array = Data.normalize(imagePIL)
 
-                # Crop the center of the image
-                imagePIL = imagePIL.crop((left, top, right, bottom))
-
-                # Convert to float 16 to normalize here
-                image_as_array = np.array(imagePIL).astype(np.float32) / 255
             else: image_as_array = np.array(imagePIL)
             for _ in range(dups):
                 images.append(image_as_array)

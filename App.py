@@ -223,9 +223,13 @@ def process_record(model, model_data, metrics, params):
         model_data["best_model"] = model
         model_data["best_params"] = params
 
-def train():
+def train(num_loops, use_bayes, use_svm, use_cnn):
     """
     Trains the Naive Bayes, SVM and CNN models, and evaluates them with test data.
+    
+    Params:
+        num_loops: number of loops to test each model over different random states
+        use_bayes, use_svm, use_cnn: whether to train each particular model
     
     Returns:
         the best model and its name
@@ -248,41 +252,54 @@ def train():
                   "metrics": []}
         }
     
-    print("Loading and augmenting data...")
-    data = Data(scale=BAYES_SCALE, dups=25)
-    
     # Train and run models with different random states
     for random in range(0, num_loops):
-        # Randomly split data into 80% training and 20% test
-        print("\nSplitting data...")
-        X_train, X_test, y_train, y_test = data.splitData(random_state=random)
+        if use_bayes:
+            print("Loading and augmenting data for Bayes...")
+            data = Data(BAYES_SCALE, dups=5)
+            # Randomly split data into 80% training and 20% test
+            print("\nSplitting data...")
+            X_train, X_test, y_train, y_test = data.splitData(random_state=random)
+            
+            # Train Bayes ith grayscale and flattening
+            X_train = Data.extra_processing(X_train, grayscale=True, flatten=True)
+            X_test = Data.extra_processing(X_test, grayscale=True, flatten=True)
+            
+            # Train Bayes and record metrics
+            bayes, metrics, params = train_bayes(X_train, X_test, y_train, y_test)
+            process_record(bayes, model_record["Bayes"], metrics, params)
+            
+        if use_svm:
+            # Train SVM and record metrics
+            # Reduce the training and test set, keeping the 80/20 split
+            # The svm doesn't improve significantly with more augmented data,
+            # and it's training time si O(n^2) in the number of training samples
+            print("Loading and augmenting data for SVM...")
+            data = Data(BAYES_SCALE, dups=2)
+            X_train, X_test, y_train, y_test = data.splitData(random_state=random)
+            # Grayscale and flattening
+            X_train = Data.extra_processing(X_train, grayscale=True, flatten=True)
+            X_test = Data.extra_processing(X_test, grayscale=True, flatten=True)
+            svm, metrics, params = train_svm(X_train, X_test, y_train, y_test, random)
+            process_record(svm, model_record["SVM"], metrics, params)
+            
+        if use_cnn:
+            print("Loading and augmenting data for CNN...")
+            # Train CNN with colour images
+            cnn, metrics, params = finetune_cnn(epochs=1, seed=random)
+            process_record(cnn, model_record["CNN"], metrics, params)
 
-        # Train CNN with colour images
-        cnn, metrics, params = finetune_cnn(epochs=1, seed=random)
-        process_record(cnn, model_record["CNN"], metrics, params)
-
-        # Train Bayes and SVM with grayscale and flattening
-        X_train = Data.extra_processing(X_train, grayscale=True, flatten=True)
-        X_test = Data.extra_processing(X_test, grayscale=True, flatten=True)
-
-        # Train Bayes and record metrics
-        bayes, metrics, params = train_bayes(X_train, X_test, y_train, y_test)
-        process_record(bayes, model_record["Bayes"], metrics, params)
-
-        # Train SVM and record metrics
-        # Reduce the training and test set, keeping the 80/20 split
-        # The svm doesn't improve significantly with more augmented data,
-        # and it's training time si O(n^2) in the number of training samples
-        svm_X_train = X_train[:500]
-        svm_y_train = y_train[:500]
-        svm_X_test = X_test[:100]
-        svm_y_test = y_test[:100]
-        svm, metrics, params = train_svm(svm_X_train, svm_X_test, svm_y_train, svm_y_test, random)
-        process_record(svm, model_record["SVM"], metrics, params)
-
-    # TODO: GUI
     # Display results of training
     print("Overall results: {}".format(model_record))
+    
+    best_model, best_model_name, best_average = compute_results(model_record)
+    
+    # Let user save models to file
+    save_model_popup(model_record, best_model_name, best_average)
+    
+    return (best_model, best_model_name)
+
+def compute_results(model_record):
     
     # Determine the best model by comparing average scores
     best_average = 0
@@ -290,15 +307,37 @@ def train():
     best_params = None
     best_model = None
     
+    average_results = {"Bayes": {
+            "accuracy": None,
+            "recall": None,
+            "precision": None,
+            "macro_f1": None
+        },
+        
+        "SVM": {
+            "accuracy": None,
+            "recall": None,
+            "precision": None,
+            "macro_f1": None
+        },
+            
+        "CNN": {
+            "accuracy": None,
+            "recall": None,
+            "precision": None,
+            "macro_f1": None
+        },
+    }
+    
     # Loop over each type of model
     for model_name, record in model_record.items():
         if record["metrics"]:
             # Compute model's average F1 score
-            total = 0
+            total_f1 = 0
             for entry in record["metrics"]:
-                total += entry[KEY_SCORE]
+                total_f1 += entry[KEY_SCORE]
             
-            av = total/len(record["metrics"])   
+            av = total_f1/len(record["metrics"])   
             if av > best_average:
                 best_average = av
                 best_model_name = model_name
@@ -308,51 +347,58 @@ def train():
     # Show best model name and parameters
     print("Best model: {}".format(best_model_name))
     print("Average macro F1-score: {}".format(best_average))
-    print("Parameters: {}".format(best_params))
     
-    # Let user save models to file
-    save_model_popup(model_record)
-    
-    return (best_model, best_model_name)
+    return (best_model, best_model_name, best_average)
 
-def predict(image_file, model):
+def save_model_popup(model_record):
     """
-    Uses the current model to predict what white blood cell is in the given image.
+    Creates a popup window for saving the trained models
+    and displaying training results.
 
-    Returns:
-        The name of the white blood cell class, as a string
+    Parameters
+    ----------
+    model_record : dict
+        Stores model information.
+
+    Returns
+    -------
+    None.
 
     """
     
-    # Load image
-    im = Image.open(image_file)
-    width, height = im.size
-    
-    # Check that it matches the required dimensions
-    if width != 640 or height != 480:
-        sg.Popup("Selected image does not have 640x480 dimensions")
-    else:
-        # Process the image as needed, according to the model
-        model_class = model.__class__.__name__
-        image_list = []
-        print(model_class)
-        
-        print("Processing image sample...")
-        
-        if model_class == "GaussianNB":
-            # Scale down, convert image to grayscale and flatten
-            scale = BAYES_SCALE
-            im = im.resize((int(im.size[0]*scale), int(im.size[1]*scale)), Image.BICUBIC)
-            im = np.array(im)
-            image_list.append(im)
-            image_list = np.array(image_list)
-            image_list = Data.extra_processing(image_list, grayscale=True, flatten=True)
+    # Show the training results in GUI
+    # Make layout for save popup
+    layout2 = [
+        [sg.Text("Best Bayes F1-Score: {}\tBest Bayes Params: {}".format(model_record["Bayes"]["best_score"],\
+                                                                          model_record["Bayes"]["best_params"]))],        
+        [sg.Input(visible=False, enable_events=True, key="-SAVEBAYES-"), sg.FileSaveAs(button_text="Save Bayes Model", target="-SAVEBAYES-")],
+        [sg.Text("Best SVM F1-Score: {}\tBest SVM Params: {}".format(model_record["SVM"]["best_score"],\
+                                                                          model_record["SVM"]["best_params"]))],
+        [sg.Input(visible=False, enable_events=True, key="-SAVESVM-"), sg.FileSaveAs(button_text="Save SVM Model", target="-SAVESVM-")],
+        [sg.Text("Best CNN F1-Score: {}\tBest CNN Params: {}".format(model_record["CNN"]["best_score"],\
+                                                                          model_record["CNN"]["best_params"]))],
+        [sg.Input(visible=False, enable_events=True, key="-SAVECNN-"), sg.FileSaveAs(button_text="Save CNN Model", target="-SAVECNN-"),]
+        ]
 
-        # Run model and show prediction
-        predictions = model.predict(image_list[0].reshape(-1, 1))
-        class_name = Data.class_map[predictions[0]]
-        sg.Popup("The predicted class is {}".format(class_name))
+    newWindow = sg.Window("Model Results", layout2)
+    
+    while True:
+        event, values = newWindow.Read()
         
+        # User chooses which model to save
+        # End program if user closes window
+        if event in (sg.WIN_CLOSED, "Exit"):
+            break
+        elif event == '-SAVEBAYES-':
+            file = values["-SAVEBAYES-"]
+            save_model("Bayes", model_record["Bayes"]["best_model"], file)
+            
+        elif event == "-SAVESVM-":
+            file = values["-SAVESVM-"]
+            save_model("SVM", model_record["SVM"]["best_model"], file)
+        elif event == "-SAVECNN-":
+            file = values["-SAVECNN-"]
+            save_model("CNN", model_record["CNN"]["best_model"], file)
 
 def load_model(file):
     """
@@ -377,52 +423,6 @@ def load_model(file):
             model_name = model_data["model_name"]
 
     return (model, model_name)
-
-
-def save_model_popup(model_record):
-    """
-    Creates a popup window for saving the trained models
-    and displaying training results.
-
-    Parameters
-    ----------
-    model_record : dict
-        Stores model information.
-
-    Returns
-    -------
-    None.
-
-    """
-    
-    # TODO: show the training results in GUI
-    # Make layout for save popup
-    layout2 = [        
-        [sg.Input(visible=False, enable_events=True, key="-SAVEBAYES-"), sg.FileSaveAs(button_text="Save Bayes Model", target="-SAVEBAYES-")],
-        [sg.Input(visible=False, enable_events=True, key="-SAVESVM-"), sg.FileSaveAs(button_text="Save SVM Model", target="-SAVESVM-")],
-        [sg.Input(visible=False, enable_events=True, key="-SAVECNN-"), sg.FileSaveAs(button_text="Save CNN Model", target="-SAVECNN-"),]
-        ]
-
-    newWindow = sg.Window("Model Results", layout2)
-    
-    while True:
-        event, values = newWindow.Read()
-        
-        # User chooses which model to save
-        # End program if user closes window
-        if event in (sg.WIN_CLOSED, "Exit"):
-            break
-        elif event == '-SAVEBAYES-':
-            file = values["-SAVEBAYES-"]
-            save_model("Bayes", model_record["Bayes"]["best_model"], file)
-            
-        elif event == "-SAVESVM-":
-            file = values["-SAVESVM-"]
-            save_model("SVM", model_record["SVM"]["best_model"], file)
-        elif event == "-SAVECNN-":
-            file = values["-SAVECNN-"]
-            save_model("CNN", model_record["CNN"]["best_model"], file)
-
 
 def save_model(model_name, model, file):
     """
@@ -451,12 +451,67 @@ def save_model(model_name, model, file):
                       "model": model}
         pickle.dump(model_data, open(file, "wb"))
         sg.Popup("Model saved!")
+        
+def predict(image_file, model):
+    """
+    Uses the current model to predict what white blood cell is in the given image.
+    
+    Params:
+        image_file: the filename of the image to test
+        model: the model object to run the prediction on
 
+    Returns:
+        None
 
+    """
+    
+    # Load image
+    im = Image.open(image_file)
+    width, height = im.size
+    
+    # Check that it matches the required dimensions
+    if width != 640 or height != 480:
+        sg.Popup("Selected image does not have 640x480 dimensions")
+    else:
+        # Process the image as needed, according to the model
+        model_class = model.__class__.__name__
+        image_list = []
+        print(model_class)
+        
+        print("Processing image sample...")
+        
+        if model_class == "GaussianNB" or model_class == "GridsearchCV":
+            # Scale down, convert image to grayscale and flatten
+            scale = BAYES_SCALE
+            im = im.resize((int(im.size[0]*scale), int(im.size[1]*scale)), Image.BICUBIC)
+            im = np.array(im)
+            image_list.append(im)
+            image_list = np.array(image_list)
+            image_list = Data.extra_processing(image_list, grayscale=True, flatten=True)
+            
+            # Run model and show prediction
+            predictions = model.predict(image_list[0].reshape(-1, 1))
+            class_name = Data.class_map[predictions[0]]
+            sg.Popup("The predicted class is {}".format(class_name))
+            
+        else:
+            scale = 0.55
+            im = im.resize((int(im.size[0]*scale), int(im.size[1]*scale)), Image.BICUBIC)
+            im = Data.normalize(im)
+            image_list.append(im)
+            image_list = torch.tensor(image_list).permute(0, 3, 1, 2)
+            prediction = model(image_list)
+            print(prediction)
+            class_name = Data.class_map[prediction]
+            sg.Popup("The predicted class is {}".format(class_name))
 
 # Set the layout of the GUI
 layout = [[sg.Text("CPSC 599 - White Blood Cell Classifier")], 
           [sg.Text("Celina Ma, Rylan Marianchuk, Sam Robertson")],
+          [sg.Text("Models to train: "), sg.Checkbox("Bayes", default=True, enable_events=True, key='-BAYESCHECK-'),
+                sg.Checkbox("SVM", default=True, enable_events=True, key='-SVMCHECK-'),
+                sg.Checkbox("CNN", default=True, enable_events=True, key='-CNNCHECK-')],
+          
           [sg.Input(key='-LOADEDFILE-', visible=False, enable_events=True), \
            sg.FileBrowse(button_text="Load Model", target="-LOADEDFILE-", \
                          file_types=(("All files", "*.*"), ("No extension", ""), ("ALL files", "*")), key="--LOAD--"), \
@@ -475,13 +530,15 @@ window = sg.Window("White Blood Cell Classifier", layout)
 model = None
 model_name = None
 num_loops = DEFAULT_LOOPS
+use_bayes = True
+use_svm = True
+use_cnn = True
 
 # Create an event loop
 while True:
     # Obtain the latest event
     event, values = window.read()
     
-
     # End program if user closes window
     if event in (sg.WIN_CLOSED, "Exit"):
         break
@@ -494,7 +551,7 @@ while True:
     
     elif event == "Train Models":
     # Retrain the models
-        model, model_name = train()
+        model, model_name = train(num_loops, use_bayes, use_svm, use_cnn)
         window['--MODEL--'].update("Current Model: {}".format(model_name))
         
     elif event == '-LOOPS-' and values['-LOOPS-']:
@@ -512,6 +569,18 @@ while True:
                 if len(values['-LOOPS-']) == 1 and values['-LOOPS-'][0] == '-':
                     continue
                 window['-LOOPS-'].update(values['-LOOPS-'][:-1])
+                
+    elif event == '-BAYESCHECK-':
+        use_bayes = not use_bayes
+        window["-BAYESCHECK-"].update(use_bayes)
+        
+    elif event == '-SVMCHECK-':
+        use_svm = not use_svm
+        window["-SVMCHECK-"].update(use_svm)
+    
+    elif event == '-CNNCHECK-':
+        use_cnn = not use_cnn
+        window["-CNNCHECK-"].update(use_cnn)
         
     elif event == "--PREDICT--":
         # Run prediction on a user-provided image
