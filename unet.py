@@ -164,7 +164,7 @@ def finetune_cnn(verbose=False, epochs=2, seed=0):
     # only predict the majority class
     class_weights = torch.Tensor([1, 1, 1, 0.6])
     loss_fn = nn.CrossEntropyLoss(weight=class_weights).to(device)
-    for learning_rate in [1e-4]:#, 1e-3]:
+    for learning_rate in [1e-4, 1e-3]:
         for optimizer_name in ['adam', 'sgd']:
             model = Unet().to(device)
             if optimizer_name == 'sgd':
