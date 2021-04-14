@@ -379,13 +379,13 @@ def save_model_popup(model_record, best_model_name):
         [sg.Text("Best model: {}".format(best_model_name))],
         
         # Summary of models
-        [sg.Text("Bayes - Average F1-Score: {:.3f}\tAverage Accuracy: {:.3f}\tBest Params: {}".format(model_record["Bayes"]["average_f1"],\
+        [sg.Text("Bayes - Average F1-Score: {:.3f}    Average Accuracy: {:.3f}    Best Params: {}".format(model_record["Bayes"]["average_f1"],\
                                                             model_record["Bayes"]["average_acc"], model_record["Bayes"]["best_params"]))],        
         [sg.Input(visible=False, enable_events=True, key="-SAVEBAYES-"), sg.FileSaveAs(button_text="Save Bayes Model", target="-SAVEBAYES-")],
-        [sg.Text("SVM - Average F1-Score: {:.3f}\tAverage Accuracy: {:.3f}\tBest Params: {}".format(model_record["SVM"]["average_f1"],\
+        [sg.Text("SVM - Average F1-Score: {:.3f}    Average Accuracy: {:.3f}    Best Params: {}".format(model_record["SVM"]["average_f1"],\
                                                                 model_record["SVM"]["average_acc"], model_record["SVM"]["best_params"]))],
         [sg.Input(visible=False, enable_events=True, key="-SAVESVM-"), sg.FileSaveAs(button_text="Save SVM Model", target="-SAVESVM-")],
-        [sg.Text("CNN - Average F1-Score: {:.3f}\tAverage Accuracy: {:.3f}\tBest Params: {}".format(model_record["CNN"]["average_f1"],\
+        [sg.Text("CNN - Average F1-Score: {:.3f}    Average Accuracy: {:.3f}    Best Params: {}".format(model_record["CNN"]["average_f1"],\
                                                                 model_record["CNN"]["average_acc"],model_record["CNN"]["best_params"]))],
         [sg.Input(visible=False, enable_events=True, key="-SAVECNN-"), sg.FileSaveAs(button_text="Save CNN Model", target="-SAVECNN-"),]
         ]
@@ -490,7 +490,7 @@ def predict(image_file, model):
         
         print("Processing image sample...")
         
-        if model_class == "GaussianNB" or model_class == "GridsearchCV":
+        if model_class == "GaussianNB" or model_class == "GridSearchCV":
             # Scale down, convert image to grayscale and flatten
             scale = BAYES_SCALE
             im = im.resize((int(im.size[0]*scale), int(im.size[1]*scale)), Image.BICUBIC)
@@ -500,7 +500,8 @@ def predict(image_file, model):
             image_list = Data.extra_processing(image_list, grayscale=True, flatten=True)
             
             # Run model and show prediction
-            predictions = model.predict(image_list[0].reshape(-1, 1))
+            predictions = model.predict(image_list[0].reshape(1, -1))
+
             class_name = Data.class_map[predictions[0]]
             sg.Popup("The predicted class is {}".format(class_name))
             
