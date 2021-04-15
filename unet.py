@@ -10,12 +10,16 @@ Pytorch coding style inspired by/adapted from:
  https://pytorch.org/tutorials/beginner/basics/quickstart_tutorial.html
 
 @author Sam
-
 '''
 
 
 # As in https://github.com/usuyama/pytorch-unet/blob/master/pytorch_unet.py
 def double_conv(in_channels, out_channels):
+    '''
+    A frequently used layer consisting of two convolutional convolutional layers,
+    each followed by a ReLU activation function. This makes up the basic building
+    block of the Unet architecture.
+    '''
     return nn.Sequential(
         nn.Conv2d(in_channels, out_channels, 3, padding=1),
         nn.ReLU(),
@@ -35,6 +39,7 @@ class Unet(nn.Module):
     '''
 
     def __init__(self):
+        # Sets up all the memory needed for the models trainable parameters
         super(Unet, self).__init__()
         # conv down layers
         self.down1 = double_conv(3, 32)
@@ -58,6 +63,7 @@ class Unet(nn.Module):
         )
 
     def forward(self, x):
+        # computes a forward pass through the neural network, given input data x
         # block 1
         conv1 = self.down1(x)
         x = self.maxpool(conv1)
@@ -88,8 +94,23 @@ class Unet(nn.Module):
         return out
 
 
-# train a CNN for a single epoch on a given dataset
 def train(dataloader, model, loss_fn, optim, device):
+    '''
+    Train a CNN for a single epoch.
+
+    Parameters
+    ---------
+
+    dataloader : the dataset to train on, wrapped as a generator of pytorhc tensors.
+
+    model : the instantiated model to train
+
+    loss_fn : a pytorch loss function
+
+    optim : a pytorch optimizer
+
+    device : whether or not to use a cuda-enabled gpu
+    '''
     size = len(dataloader.dataset)
     for batch, (X, y) in enumerate(dataloader):
         X, y = X.to(device), y.to(device)
@@ -109,6 +130,29 @@ def train(dataloader, model, loss_fn, optim, device):
 
 # this development function prints and returns test set metrics
 def test(dataloader, model, loss_fn, device):
+    '''
+    Evaluate a trained model on a testing dataset.
+
+    Parameters
+    ---------
+
+    dataloader : the dataset to train on, wrapped as a generator of pytorhc tensors.
+
+    model : the trained model to evaluate
+
+    loss_fn : a pytorch loss function
+
+    device : whether or not to use a cuda-enabled gpu
+
+    Returns
+    -------
+
+    correct : the accuracy of the model
+
+    loss : the loss of the model
+
+    f1_macro : the macroaveraged F1 score of the model
+    '''
     size = len(dataloader.dataset)
     model.eval()
     loss, correct = 0, 0
@@ -133,6 +177,25 @@ def test(dataloader, model, loss_fn, device):
 
 # load the data as required for CNN training
 def load_data(val_proportion=0.1, scale=0.55, batch_size=16):
+    '''
+    Create data loaders for the training and test set.
+
+    Parameters
+    ----------
+
+    val_proportion : the amount of the trianing data to partition off as a validation set
+
+    scale : the proportion of the original image to resize to
+
+    batch_size : the number of images to generate in a batch
+
+    Returns
+    -------
+
+    train_dl : a dataloader object for the training set
+
+    test_dl : a dataloader object for the test set
+    '''
     print('Loading Dataset for CNN')
     data = Data(scale=scale, normalize=True)
     X = torch.tensor(data.X).permute(0, 3, 1, 2)
@@ -149,6 +212,27 @@ def load_data(val_proportion=0.1, scale=0.55, batch_size=16):
 
 # This method performs hyperparameter search
 def finetune_cnn(verbose=False, epochs=2, seed=0):
+    '''
+    Train the model for multiple emacs, doing a grid search over hyperparameters.
+
+    Parameters
+    ----------
+
+    verbose : whether or not to give a detailed printout of the finetuning process
+
+    epochs : the number of epochs to train each model for
+
+    seed : the random seed to use for training
+
+    Returns
+    -------
+
+    best_model : the most performant trained model
+
+    metrics : the scores of the best model
+
+    best_model_params : the hyperparameters which generated the best model
+    '''
     print('Training CNN...')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if verbose:
@@ -194,6 +278,25 @@ def finetune_cnn(verbose=False, epochs=2, seed=0):
 
 # function to evaluate a unet on a given dataset, returns dictionary
 def test_unet(dataloader, model, loss_fn, device):
+    '''
+    Evaluate a trained model on a testing dataset.
+
+    Parameters
+    ---------
+
+    dataloader : the dataset to train on, wrapped as a generator of pytorhc tensors.
+
+    model : the trained model to evaluate
+
+    loss_fn : a pytorch loss function
+
+    device : whether or not to use a cuda-enabled gpu
+
+    Returns
+    -------
+
+    A dictionary containing the best model accuracy and f1 score.
+    '''
     size = len(dataloader.dataset)
     model.eval()
     loss, correct = 0, 0
@@ -216,6 +319,18 @@ def test_unet(dataloader, model, loss_fn, device):
 
 # this function can be used to train a single (the best) unet only
 def train_unet():
+    '''
+    Trains the model with the best parameters found (development function).
+
+    Returns
+    -------
+
+    model : the trained model
+
+    metrics : the scores of the model
+
+    params : the hyperparameters which generated the model
+    '''
     print('Training CNN...')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('Using {} device'.format(device))

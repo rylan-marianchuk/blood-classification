@@ -12,6 +12,20 @@ seed = 9
 
 # this function loads the data, shouldn't be needed after putting things in App.py
 def load_data():
+    '''
+    Load the data for devloping the svm model.
+
+    Returns
+    -------
+    X_train : Numpy array
+        Array of data to train on.
+    X_test : Numpy array
+        Labels for training data.
+    y_train : Numpy array
+        Array of data to test.
+    y_test : Numpy array
+        Labels for test data.
+    '''
     print('Setting up Data')
     data = Data(scale=0.15)
     X_train, X_test, y_train, y_test = data.splitData(random_state=seed)
@@ -21,6 +35,19 @@ def load_data():
 
 
 def train_svm(X, y):
+    '''
+    Trains the svm on labelled training data.
+
+    Parameters
+    ----------
+    X : The training data.
+
+    y : The labels for the training data.
+
+    Returns
+    -------
+    svm : The trained svm model.
+    '''
     print("Creating SVM")
     seed = 9
     svm = SVC(kernel='poly', random_state=seed, verbose=1, max_iter=2500)
@@ -30,6 +57,23 @@ def train_svm(X, y):
 
 
 def evaluate_svm(X, y, model):
+    '''
+    Evaluates a trained svm given a labelled testing set.
+
+    Parameters
+    ----------
+    X : The training data.
+
+    y : The labels for the training data.
+
+    model : The trained model to evaluate.
+
+    Returns
+    -------
+    acc : The model's accuracy.
+
+    f1_macro : The model's macroaveraged F1 score.
+    '''
     acc = model.score(X, y)
     pred = model.predict(X)
     f1_macro = f1_score(y, pred, average="macro")
@@ -37,6 +81,21 @@ def evaluate_svm(X, y, model):
 
 
 def finetune_svm(X, y, model):
+    '''
+    Uses a model type to test out a grid of hyperparameters, and hopefully find the best settings.
+
+    Parameters
+    ----------
+    X : The training data.
+
+    y : The labels for the training data.
+
+    model : The trained model to evaluate.
+
+    Returns
+    -------
+    best_model : The most performant model.
+    '''
     gridsearch = GridSearchCV(estimator=model,
                               param_grid={'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
                                           'C': [1, 10, 100, 1000],

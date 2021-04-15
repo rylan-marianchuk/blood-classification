@@ -165,7 +165,27 @@ def train_bayes(X_train, X_test, y_train, y_test):
 
 def train_svm(X_train, X_test, y_train, y_test, seed):
     """
-    Train the SVM and evaluate on the test set.
+    Train the SVM model and evaluate on the test set.
+
+    Parameters
+    ----------
+    X_train : Numpy array
+        Array of data to train on.
+    X_test : Numpy array
+        Labels for training data.
+    y_train : Numpy array
+        Array of data to test.
+    y_test : Numpy array
+        Labels for test data.
+
+    Returns
+    -------
+    best_model :
+        The trained SVM model
+    metrics : dict
+        The final accuracy scores of the model (accuracy, f1_macro)
+    params: dict
+        The best hyperparameters found for the model.
     """
     print('Training SVM...')
     svm = SVC(verbose=0, max_iter=-1)
@@ -195,7 +215,7 @@ def process_record(model, model_data, metrics, params):
 
     Parameters
     ----------
-    model : 
+    model :
         trained model object
     model_data : dictionary with keys "best_model",
         "best_params", "best_score", "main_scores"
@@ -209,13 +229,13 @@ def process_record(model, model_data, metrics, params):
     None.
 
     """
-    
+
     # Get the latest model score
     score = metrics[KEY_SCORE]
-        
+
     # Update model data with training results
     model_data["metrics"].append(metrics)
-        
+
     # Update best model of this type
     if score > model_data["best_score"]:
         # Save new best model
@@ -302,8 +322,6 @@ def train(num_loops, use_bayes, use_svm, use_cnn):
 
 def compute_results(model_record):
     """
-    
-
     Parameters
     ----------
     model_record : TYPE
