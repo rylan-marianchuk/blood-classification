@@ -56,6 +56,7 @@ class Data:
 
         else:
             self.augment(scale, dups, save_to_disk)
+            # Update instance variables to np array, map classes to ints instead of str
             self.X = np.array(self.X)
             self.Y = np.array([self.class_map[s] for s in self.Y])
         
@@ -187,6 +188,8 @@ class Data:
         count = 0
         using = 0
         images = []
+        
+        # Loading all images to prep for augmentation
         for im in os.listdir(inDIR):
             if type(label_col[count]) == type(float()) or len(label_col[count].split(" ")) != 1 \
                 or len(label_col[count].split(",")) != 1 or label_col[count] == 'BASOPHIL' :
@@ -199,6 +202,7 @@ class Data:
             imagePIL = Image.open(inDIR + "/" + im)
             imagePIL = imagePIL.resize((int(imagePIL.size[0]*scale), int(imagePIL.size[1]*scale)) , Image.BICUBIC)
 
+            # Normalization used for GoogLe Net model
             if self.normalized:
                 image_as_array = Data.normalize(imagePIL)
 
@@ -208,6 +212,7 @@ class Data:
                 labels.append(label_col[count])
             count += 1
             using += 1
+            
         print("New size:")
         print(images[0].shape)
         print("Number of images dropped: " + str(count - using))
@@ -221,6 +226,7 @@ class Data:
         three = ia.augmenters.Sometimes(0.55, ia.augmenters.Affine(
             rotate=(-45, 45)))
 
+        # Definition augmentation operators, choose at least one to apply to each vanilla image
         aug = ia.augmenters.SomeOf((1, None), [
             ia.augmenters.Affine(rotate=(-45, 45)),
             ia.augmenters.Affine(
@@ -228,7 +234,8 @@ class Data:
             ia.augmenters.Affine(
                 scale={"x": (0.8, 1.12), "y": (0.8, 1.12)})
         ], random_order=True)
-
+        
+        # Apply the augmentation
         flipH = ia.augmenters.Fliplr(0.3333)
         flipV = ia.augmenters.Flipud(0.3333)
         augmented = flipH(images=images)
