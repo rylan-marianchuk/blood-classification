@@ -8,32 +8,12 @@ GoogLeNet weights are frozen, added a k neuron layer that is fully connected at 
 
 
 import torch
-from torch.utils.data import DataLoader, TensorDataset, random_split, Dataset
+from torch.utils.data import DataLoader, TensorDataset, random_split
 import numpy as np
 from torchvision.models import googlenet
 from preprocess import Data
 import torchvision.transforms as transforms
-
-class CustomTensorDataset(Dataset):
-    """TensorDataset with support of transforms.
-    """
-    def __init__(self, tensors, transform=None):
-        assert all(tensors[0].size(0) == tensor.size(0) for tensor in tensors)
-        self.tensors = tensors
-        self.transform = transform
-
-    def __getitem__(self, index):
-        x = self.tensors[0][index]
-
-        if self.transform:
-            x = self.transform(x)
-
-        y = self.tensors[1][index]
-
-        return x, y
-
-    def __len__(self):
-        return self.tensors[0].size(0)
+import matplotlib.pyplot as plt
 
 # Classes
 k = 4
@@ -49,8 +29,6 @@ model.fc = torch.nn.Linear(model.fc.in_features, k)
 # Grab data and turn into dataset
 data = Data(scale=0.55, normalize=True)
 int_labels = torch.tensor(data.Y)
-#all = CustomTensorDataset(tensors=(torch.tensor(data.X), int_labels), transform=
-#            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]))
 X = torch.tensor(data.X)
 X_perm = X.permute(0, 3, 1, 2)
 all = TensorDataset(X_perm, int_labels)
@@ -66,6 +44,7 @@ params = {
     'batch_size': batch_size,
     'shuffle': True
 }
+# Load the datasets
 loader_tr = DataLoader(train, **params)
 loader_te = DataLoader(test, **params)
 
@@ -73,13 +52,14 @@ loader_te = DataLoader(test, **params)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 loss_criteria = torch.nn.CrossEntropyLoss()
 
+# Attach to gpu
 if torch.cuda.is_available():
     model = model.to("cuda")
     loss_criteria = loss_criteria.to("cuda")
 
 # Train
 model.train()
-for epoch in range(30):
+for epoch in range(12):
     # Store losses and accuracy on each batch
     loss_list = []
     correct = 0
@@ -94,11 +74,14 @@ for epoch in range(30):
 
         out = model(X)
         predicted = torch.max(out.data, 1)[1]
+
+        # Get loss
         loss = loss_criteria(out, y)
         loss_list.append(loss.item())
+        # Update accuracy
         correct += (predicted == y).sum()
         total += len(y)
-        # Parameters update, the pytorch strength here
+        # Parameters update after calculating loss, pytorch strength here
         loss.backward()
         optimizer.step()
 
@@ -108,6 +91,9 @@ for epoch in range(30):
 model.eval()
 running_correct = 0
 total = 0
+predicted_all = []
+true_all = []
+# Analogous to train loop, only loading test set
 for batch_idx, batch in enumerate(loader_te):
     X, y = batch
     X = X.to("cuda")
@@ -116,5 +102,20 @@ for batch_idx, batch in enumerate(loader_te):
     predicted = torch.max(out.data, 1)[1]
     running_correct += (predicted == y).sum()
     total += len(y)
+    predicted_all += predicted.tolist()
+    true_all += y.tolist()
 
 print(f"Test Accuracy: {running_correct / total:.4f}")
+
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+from sklearn.metrics import f1_score
+
+# Obtaining confusion matrix and f1 score metrics
+
+f1_macro = f1_score(true_all, predicted_all, average='macro')
+print(f1_macro)
+cm = confusion_matrix(true_all, predicted_all, labels=[0, 1, 2, 3])
+disp = ConfusionMatrixDisplay(confusion_matrix=cm,
+                              display_labels=["EOSIN", "LYMPH", "MONO", "NEUTRO"])
+disp.plot()
+plt.show()
