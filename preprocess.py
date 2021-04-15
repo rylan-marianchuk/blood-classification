@@ -1,9 +1,8 @@
 import pandas as pd
 import imgaug as ia
 import os
-import imageio
 import numpy as np
-from PIL import Image, ImageOps
+from PIL import Image
 from sklearn.manifold import Isomap
 from sklearn.model_selection import train_test_split
 
@@ -32,9 +31,12 @@ class Data:
 
         :param scale float how much to resize width and height before augmenting
         :param normalize: if True, values of the image array are floats from 0 to 1, otherwise uint8 between 0, 255
+        :param read_from_disk / save_to_disk: currently unused, but for loading/saving augmented data to disk
+        
         """
         self.normalized = normalize
-
+        
+        # Currently unused; loads augmented data from disk
         if read_from_disk:
             augDir = r"augmented"
             csv_labels = pd.read_csv("auglabels.csv")["label"].tolist()
@@ -55,6 +57,7 @@ class Data:
                 i += 1
 
         else:
+            # Augments on the fly
             self.augment(scale, dups, save_to_disk)
             # Update instance variables to np array, map classes to ints instead of str
             self.X = np.array(self.X)
@@ -65,11 +68,10 @@ class Data:
     def splitData(self, random_state=None):
         """
             Splits own data (X and y) into training and test sets by
-            an 80/20 ratio.
+            an 80/20 ratio, with stratification.
             
             Parameters:
                 random_state (optional): a random integer seed for splitting
-                
                 
             Returns:
                 X_train: a Numpy array of filenames for image data
@@ -138,7 +140,8 @@ class Data:
     # Euclidean distance between two vectors
     def dist(self, vec1, vec2):
         return np.sqrt(sum((vec1[i] - vec2[i]) ** 2 for i in range(len(vec1))))
-
+    
+    # Unused; tested blue masking of images
     def mask(self, img):
         # If all channels are below some threshold, turn to cream
         for i in range(img.shape[0]):
@@ -175,7 +178,7 @@ class Data:
 
         Augmentations to apply:
         :param scale float how much to resize width and height before augmenting
-        :param dupes int  number of duplications of each image to make when augmenting
+        :param dupes int  number of duplications of each image to make when augmenting (33 augments to over 10000)
         :param save_to_disk: if True, all augmented images are saved, otherwise just loaded into self.X
         :return: augmented dataset
         """

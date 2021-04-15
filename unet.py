@@ -117,10 +117,10 @@ def test(dataloader, model, loss_fn, device):
     with torch.no_grad():
         for X, y in dataloader:
             X, y = X.to(device), y.to(device)
-            pred = model(X)
+            pred = model(X)    # Model prediction on the loaded data
             loss += loss_fn(pred, y).item()
             pred = torch.argmax(pred, dim=1)
-            correct += (pred == y).type(torch.float).sum().item()
+            correct += (pred == y).type(torch.float).sum().item()  # Track model score
             # accumulate info for f1 score
             pred_list.extend(pred.cpu().numpy())
             y_true.extend(y.cpu().numpy())
@@ -134,8 +134,8 @@ def test(dataloader, model, loss_fn, device):
 # load the data as required for CNN training
 def load_data(val_proportion=0.1, scale=0.55, batch_size=16):
     print('Loading Dataset for CNN')
-    data = Data(scale=scale, normalize=True)
-    X = torch.tensor(data.X).permute(0, 3, 1, 2)
+    data = Data(scale=scale, normalize=True)  # Load rescaled 55% images
+    X = torch.tensor(data.X).permute(0, 3, 1, 2)  # Convert to tensors
     y = torch.tensor(data.Y)
     data = TensorDataset(X, y)
     n = len(data)
@@ -164,6 +164,7 @@ def finetune_cnn(verbose=False, epochs=2, seed=0):
     # only predict the majority class
     class_weights = torch.Tensor([1, 1, 1, 0.6])
     loss_fn = nn.CrossEntropyLoss(weight=class_weights).to(device)
+    # Validate over different learning rates and optimizers
     for learning_rate in [1e-4, 1e-3]:
         for optimizer_name in ['adam', 'sgd']:
             model = Unet().to(device)
@@ -181,12 +182,14 @@ def finetune_cnn(verbose=False, epochs=2, seed=0):
                 acc, loss, f1 = test(test_dl, model, loss_fn, device)
             if verbose:
                 print('Model Training Finished')
+            # Store best model
             if f1 > best_model_score:
                 model.cpu()
                 best_model = model
                 best_model_params = {'optimizer': optimizer_name,
                                      'learning_rate': learning_rate}
     best_model.to(device)
+    # Run model on test set and return final scores
     metrics = test_unet(test_dl, best_model, loss_fn, device)
     best_model.cpu()
     return best_model, metrics, best_model_params
@@ -202,13 +205,15 @@ def test_unet(dataloader, model, loss_fn, device):
     with torch.no_grad():
         for X, y in dataloader:
             X, y = X.to(device), y.to(device)
-            pred = model(X)
+            pred = model(X)   # Make predictions and score
             loss += loss_fn(pred, y).item()
             pred = torch.argmax(pred, dim=1)
             correct += (pred == y).type(torch.float).sum().item()
             # accumulate info for f1 score
             pred_list.extend(pred.cpu().numpy())
             y_true.extend(y.cpu().numpy())
+    
+    # Return model's F1-score and accuracy
     acc = correct / size
     f1_macro = f1_score(y_true, pred_list, average='macro')
     return {'accuracy': acc, 'f1_macro': f1_macro}
